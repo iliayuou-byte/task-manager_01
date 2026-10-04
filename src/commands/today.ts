@@ -1,8 +1,9 @@
+import { formatInTimeZone } from 'date-fns-tz';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
 import { queryTasks } from '../services/queryTasks.js';
-import { getTasksByDay, logAndReplyError } from '../utils/index.js';
-import { getTodaysTasksMessage } from '../views/generalView.js';
+import { logAndReplyError } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 
 export const todayCommand = async (ctx: BotContext) => {
   try {
@@ -16,19 +17,22 @@ export const todayCommand = async (ctx: BotContext) => {
     }
 
     const today = new Date();
-    const todaysTasks = getTasksByDay(
-      taskData.uncompleted,
-      today,
-      metadata.timezone,
+    const date = formatInTimeZone(today, metadata.timezone, 'yyyy-MM-dd');
+    const todaysTasks = taskData.uncompleted.filter(
+      (task) => !task.date || task.date <= date,
     );
 
     if (todaysTasks.length === 0) {
       return ctx.reply('📭 No tasks for today!');
     }
 
-    const response = getTodaysTasksMessage(todaysTasks, metadata.timezone!);
-
-    ctx.reply(response, { parse_mode: 'MarkdownV2' });
+    for (const message of splitMessages([
+      `📋 Сегодня · ${date}`,
+      '',
+      ...matrixLines(todaysTasks),
+    ])) {
+      await ctx.reply(message);
+    }
   } catch (error) {
     logAndReplyError(
       ctx,

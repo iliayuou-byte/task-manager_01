@@ -1,6 +1,7 @@
 import bot from './bot.js';
 import { COMMANDS } from './core/config.js';
 import logger from './core/logger.js';
+import { startReminderLoop } from './services/reminders.js';
 
 const webhook = await bot.api.getWebhookInfo();
 if (webhook.url) {
@@ -14,8 +15,16 @@ await bot.api.setMyCommands(
     description: value.desc,
   })),
 );
-process.once('SIGINT', () => bot.stop());
-process.once('SIGTERM', () => bot.stop());
+let stopReminders: (() => void) | undefined;
+const stop = () => {
+  stopReminders?.();
+  bot.stop();
+};
+process.once('SIGINT', stop);
+process.once('SIGTERM', stop);
 await bot.start({
-  onStart: () => logger.infoWithContext({ message: 'Copilot polling started' }),
+  onStart: () => {
+    logger.infoWithContext({ message: 'Copilot polling started' });
+    stopReminders = startReminderLoop(bot);
+  },
 });

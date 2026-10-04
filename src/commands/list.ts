@@ -2,12 +2,8 @@ import { Command } from '../core/config.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { queryTasks } from '../services/queryTasks.js';
-import {
-  extractArg,
-  formatTaskListStr,
-  logAndReplyError,
-  parseTags,
-} from '../utils/index.js';
+import { extractArg, logAndReplyError, parseTags } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { NO_TASK_MESSAGE } from '../views/generalView.js';
 
 export const listCommand = async (ctx: BotContext) => {
@@ -20,7 +16,6 @@ export const listCommand = async (ctx: BotContext) => {
 
     let tasksToDisplay: Task[];
     let title: string;
-    let showStatus = false;
 
     if (!arg) {
       // Default: show pending tasks
@@ -30,7 +25,6 @@ export const listCommand = async (ctx: BotContext) => {
       // Show all tasks
       tasksToDisplay = taskData.uncompleted.concat(taskData.completed);
       title = '📚 *All Tasks*';
-      showStatus = true;
     } else {
       // Filter by tags
       const filterTags = parseTags(arg);
@@ -54,9 +48,13 @@ export const listCommand = async (ctx: BotContext) => {
       return ctx.reply(NO_TASK_MESSAGE);
     }
 
-    const message = `${title}\n\n${formatTaskListStr(tasksToDisplay, showStatus)}`;
-
-    ctx.reply(message, { parse_mode: 'MarkdownV2' });
+    for (const message of splitMessages([
+      title.replace(/\*/g, ''),
+      '',
+      ...matrixLines(tasksToDisplay),
+    ])) {
+      await ctx.reply(message);
+    }
   } catch (error) {
     logAndReplyError(ctx, Command.LIST, error, '❌ Error fetching tasks.');
   }

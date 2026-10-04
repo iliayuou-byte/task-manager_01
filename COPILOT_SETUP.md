@@ -30,3 +30,13 @@ Send `/brain study 40 minutes, buy groceries, check 1C tomorrow`. Review the pro
 ## Voice task entry
 
 Send a Telegram voice message directly in the private bot chat. With `AI_PROVIDER=gemini`, the existing model/key transcribes the audio, displays the transcript, and opens the same task draft with Save/Cancel. No tasks are saved until confirmation. Limit: 3 minutes and 8 MiB. Audio is downloaded into memory and sent to the configured Gemini API; no audio file is written locally. The transcript appears in the Telegram chat. Check names and dates before saving. Other providers currently require text `/brain`.
+
+## Eisenhower matrix and reminders
+
+`/list`, `/today`, and `/brain` previews group numbered one-line tasks into four sections: important/urgent, important/not urgent, not important/urgent, neither. `/now` follows the same quadrant order. AI proposes importance and urgency separately; a planned date alone does not mean urgent. For older tasks, urgent priority maps to quadrant 1, low to quadrant 4, others to quadrant 2. Override with `/quadrant 3 exact task name` (numbers 1–4 are quadrant IDs, not displayed task numbers).
+
+With GitHub storage, Important and Urgent columns are appended on the next save. Existing twelve-column files remain readable. No manual migration is needed. Matrix fields/reminder metadata are implemented for the GitHub storage used by this personal bot; Notion storage is not extended here.
+
+Enable Telegram list reminders with `/reminders 09:00 19:00` in your stored timezone. `/reminders` shows settings, `/reminders off` disables them. Up to four daily times. Reminders include undated tasks and tasks planned for today or earlier, excluding completed tasks. They are daily digests, not individual deadline alarms. They go to the first allowlisted user (single-owner bot).
+
+Polling checks each minute while the process is running. A saved slot prevents ordinary duplicates across restarts; a ten-minute grace window handles short outages. Sleep/offline periods beyond that window are not replayed. Telegram delivery followed by a storage failure may result in a repeat message. For webhook hosting, the cron endpoint needs an external scheduler running every minute; the original daily cron alone is insufficient. Reminder times and last-sent state are stored in task-file frontmatter.

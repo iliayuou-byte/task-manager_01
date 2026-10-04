@@ -127,3 +127,10 @@ src/
 ---
 
 **Note**: This project follows the **Business Source License (BUSL-1.1)**.
+
+## Personal copilot additions
+
+- `services/eisenhower.ts` provides independent importance/urgency and legacy priority mapping; `views/eisenhowerView.ts` renders numbered sections and chunks Telegram messages.
+- `commands/quadrant.ts` allows explicit quadrant overrides by exact task name.
+- `services/reminders.ts` sends configured daily digests; `commands/reminders.ts` controls times. Polling runs a minute timer; webhook mode requires a frequent external cron. Settings and last-sent slot use GitHub Markdown frontmatter.
+- GitHub task tables append Important/Urgent columns without changing earlier column positions. Notion does not yet store these additions.

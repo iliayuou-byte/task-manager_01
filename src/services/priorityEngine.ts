@@ -1,5 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz';
-import { Priority, type Task } from '../core/types.js';
+import type { Task } from '../core/types.js';
+import { getQuadrant, QUADRANTS } from './eisenhower.js';
 
 export interface RankedTask {
   task: Task;
@@ -16,13 +17,6 @@ export const rankTasks = (
 ): RankedTask[] => {
   const today = formatInTimeZone(now, timezone, 'yyyy-MM-dd');
   const clock = formatInTimeZone(now, timezone, 'HH:mm');
-  const weights = {
-    [Priority.LOW]: 10,
-    [Priority.MEDIUM]: 30,
-    [Priority.HIGH]: 60,
-    [Priority.URGENT]: 90,
-  };
-
   return (
     tasks
       .filter((task) => !task.completed)
@@ -32,11 +26,9 @@ export const rankTasks = (
         (task) => !(task.date === today && task.time && task.time > clock),
       )
       .map((task): RankedTask => {
-        let score = weights[task.priority ?? Priority.MEDIUM];
-        const reasons: string[] = [];
-        if (task.priority === Priority.URGENT)
-          reasons.push('срочный приоритет');
-        if (task.priority === Priority.HIGH) reasons.push('высокий приоритет');
+        const quadrant = getQuadrant(task);
+        let score = [100, 60, 30, 10][quadrant - 1];
+        const reasons: string[] = [QUADRANTS[quadrant - 1]];
         if (task.date && task.date < today) {
           score += 40;
           reasons.push('запланированная дата уже прошла');
@@ -64,7 +56,10 @@ export const rankTasks = (
         return { task, score, reasons, partial };
       })
       .sort(
-        (a, b) => b.score - a.score || a.task.name.localeCompare(b.task.name),
+        (a, b) =>
+          getQuadrant(a.task) - getQuadrant(b.task) ||
+          b.score - a.score ||
+          a.task.name.localeCompare(b.task.name),
       )
   );
 };

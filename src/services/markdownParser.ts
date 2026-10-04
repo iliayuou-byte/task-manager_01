@@ -25,6 +25,8 @@ export const COL_IDX = {
   LINK: getColIdx('link'),
   CALENDAR_EVENT_ID: getColIdx('calendarEventId'),
   RECURRENCE_RULE: getColIdx('recurrenceRule'),
+  IMPORTANT: getColIdx('important'),
+  URGENT: getColIdx('urgent'),
 };
 
 export interface ParseResult {
@@ -71,7 +73,9 @@ export const parseMarkdown = (content: string): ParseResult => {
       const match = line.match(FRONTMATTER_KEY_VALUE_PATTERN);
       if (match) {
         const [, key, value] = match;
-        if (key === 'last_synced') {
+        if (key === 'reminder_times' || key === 'reminder_last_sent') {
+          metadata[key] = value;
+        } else if (key === 'last_synced') {
           metadata.last_synced = value;
         } else if (key === 'total_tasks') {
           const parsed = parseInt(value, 10);
@@ -150,6 +154,14 @@ export const parseMarkdown = (content: string): ParseResult => {
 
           const task: Task = {
             completed,
+            important:
+              getCell(cells, COL_IDX.IMPORTANT) === undefined
+                ? undefined
+                : cells[COL_IDX.IMPORTANT] === 'true',
+            urgent:
+              getCell(cells, COL_IDX.URGENT) === undefined
+                ? undefined
+                : cells[COL_IDX.URGENT] === 'true',
             name: taskName,
             date: getCell(cells, COL_IDX.DATE),
             time: getCell(cells, COL_IDX.TIME),
@@ -236,6 +248,10 @@ export const serializeTaskMarkdown = (
   const lines: string[] = [];
 
   lines.push('---');
+  if (metadata.reminder_times)
+    lines.push(`reminder_times: ${metadata.reminder_times}`);
+  if (metadata.reminder_last_sent)
+    lines.push(`reminder_last_sent: ${metadata.reminder_last_sent}`);
   if (metadata.last_synced) {
     lines.push(`last_synced: ${metadata.last_synced}`);
   }
@@ -269,7 +285,9 @@ export const serializeTaskMarkdown = (
         return formatTags(task.tags);
       }
 
-      return escapeMarkdownTable(value as string | undefined);
+      return escapeMarkdownTable(
+        value === undefined ? undefined : String(value),
+      );
     });
 
     lines.push(`| ${row.join(' | ')} |`);

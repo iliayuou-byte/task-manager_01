@@ -8,6 +8,7 @@ import { uniqueBrainTasks } from '../services/brainDraft.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { extractArg, logAndReplyError } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 
 interface Draft {
   owner: number;
@@ -62,20 +63,24 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
       expires: Date.now() + 15 * 60_000,
       saving: false,
     });
-    const preview = tasks
-      .map(
-        (task, index) =>
-          `${index + 1}. ${task.name}\n${[task.date && `дата: ${task.date}`, task.duration && `длительность: ${task.duration}`, `приоритет: ${task.priority}`, task.tags.map((tag) => `#${tag}`).join(' ')].filter(Boolean).join(' · ')}`,
-      )
-      .join('\n\n');
-    await ctx.reply(
-      `🧠 Предлагаю сохранить:\n\n${preview}\n\nПроверь список. Черновик действует 15 минут.`,
-      {
-        reply_markup: new InlineKeyboard()
-          .text('✅ Сохранить', `brain_yes:${id}`)
-          .text('❌ Отмена', `brain_no:${id}`),
-      },
-    );
+    const messages = splitMessages([
+      '🧠 Предлагаю сохранить:',
+      '',
+      ...matrixLines(tasks),
+      'Проверь список. Черновик действует 15 минут.',
+    ]);
+    for (let index = 0; index < messages.length; index++) {
+      await ctx.reply(
+        messages[index],
+        index === messages.length - 1
+          ? {
+              reply_markup: new InlineKeyboard()
+                .text('✅ Сохранить', `brain_yes:${id}`)
+                .text('❌ Отмена', `brain_no:${id}`),
+            }
+          : {},
+      );
+    }
   } catch (error) {
     logAndReplyError(
       ctx,

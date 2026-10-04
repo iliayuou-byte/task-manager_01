@@ -15,6 +15,8 @@ export interface Task {
   // formatted as "HH:MM"
   duration?: string;
   priority?: Priority;
+  important?: boolean;
+  urgent?: boolean;
   tags: string[];
   description?: string;
   // External link related to the task
@@ -32,7 +34,10 @@ export type TaskData = Record<Exclude<TaskTypeToOp, 'none'>, Task[]>;
 
 export type Field = keyof Task;
 
-export type EditableField = Exclude<Field, 'completed' | 'calendarEventId'>;
+export type EditableField = Exclude<
+  Field,
+  'completed' | 'calendarEventId' | 'important' | 'urgent'
+>;
 
 export interface Metadata {
   last_synced?: string;
@@ -40,6 +45,8 @@ export interface Metadata {
   tags?: string[];
   table_header?: string;
   timezone?: string;
+  reminder_times?: string;
+  reminder_last_sent?: string;
 }
 
 // GitHub Webhook Types

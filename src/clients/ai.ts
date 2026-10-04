@@ -14,6 +14,18 @@ const robustString = (description: string, defaultValue = '') =>
     .describe(description);
 
 const aiTaskSchema = z.object({
+  important: z
+    .boolean()
+    .nullable()
+    .describe(
+      'Importance: true for meaningful goals or consequences, false for low-value activities, null if unclear',
+    ),
+  urgent: z
+    .boolean()
+    .nullable()
+    .describe(
+      'Urgency: true only for explicit urgency or a near deadline, false otherwise; a planned day alone does not imply urgency',
+    ),
   name: robustString('Concise title of the task.', 'Untitled Task'),
   date: robustString('YYYY-MM-DD format based on timezone. Use "" if missing.'),
   time: robustString('24h HH:MM format. Use "" if missing.'),
@@ -174,7 +186,12 @@ export const generateAiTask = async (
     }
 
     const taskObj = result.object;
-    sanitizeTaskFormats(taskObj);
+    const normalized = {
+      ...taskObj,
+      important: taskObj.important ?? undefined,
+      urgent: taskObj.urgent ?? undefined,
+    };
+    sanitizeTaskFormats(normalized);
 
     logger.infoWithContext(
       {
@@ -184,7 +201,7 @@ export const generateAiTask = async (
       taskObj,
     );
 
-    return taskObj;
+    return normalized;
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.warnWithContext({
@@ -202,8 +219,13 @@ export const generateAiTask = async (
         prompt: userPrompt,
       });
 
-      const taskObj = aiTaskSchema.parse(fallbackResult.object) as AiGenTask;
-      sanitizeTaskFormats(taskObj);
+      const taskObj = aiTaskSchema.parse(fallbackResult.object);
+      const normalized = {
+        ...taskObj,
+        important: taskObj.important ?? undefined,
+        urgent: taskObj.urgent ?? undefined,
+      };
+      sanitizeTaskFormats(normalized);
 
       logger.infoWithContext(
         {
@@ -213,7 +235,7 @@ export const generateAiTask = async (
         taskObj,
       );
 
-      return taskObj;
+      return normalized;
     } catch (fallbackError) {
       logger.errorWithContext({
         op: 'AI_API_FALLBACK_FAILED',
@@ -235,6 +257,8 @@ const brainSchema = z.object({
         date: z.string().max(10),
         duration: z.string().max(8),
         priority: z.enum(Priority),
+        important: z.boolean().nullable(),
+        urgent: z.boolean().nullable(),
         tags: z.array(z.string().max(20)).max(3),
       }),
     )
@@ -253,8 +277,9 @@ Return up to 15 distinct tasks. Do not invent tasks or split one task into artif
 Date is a planned date, YYYY-MM-DD, only when stated. Otherwise empty string.
 Duration is H:MM only when explicitly stated, even without a date. Otherwise empty string.
 Priority: medium by default; change only when explicitly stated (urgent, high, low).
+Classify importance and urgency separately. Importance: true for significant goals/consequences, false for low-value tasks, null if unclear. Urgency: true for explicit urgency or a near deadline, false otherwise. A planned date alone is not a deadline. Respect explicit user overrides.
 Tags: copy relevant hashtags without #; otherwise []. Do not assign clock times.
-Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium","tags":[]}]}.`;
+Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium","important":null,"urgent":false,"tags":[]}]}.`;
   let object: unknown;
   try {
     const result = await generateObject({
@@ -273,9 +298,12 @@ Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium",
     });
     object = result.object;
   }
-  return brainSchema
-    .parse(object)
-    .tasks.map((task) => ({ ...task, completed: false }));
+  return brainSchema.parse(object).tasks.map((task) => ({
+    ...task,
+    important: task.important ?? undefined,
+    urgent: task.urgent ?? undefined,
+    completed: false,
+  }));
 };
 
 export const transcribeVoice = async (audio: Uint8Array): Promise<string> => {
