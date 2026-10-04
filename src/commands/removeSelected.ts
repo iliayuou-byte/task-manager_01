@@ -3,6 +3,11 @@ import { type Composer, InlineKeyboard } from 'grammy';
 import { generateVoiceRemoval } from '../clients/ai.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import {
+  beginPanel,
+  panelReply,
+  removeVoiceInput,
+} from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -27,7 +32,8 @@ const pending = new Map<
 
 export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
   if (!tasks.length)
-    return await ctx.reply(
+    return await panelReply(
+      ctx,
       'Не нашёл однозначно выбранных задач. Используй /list, затем /remove 1 3.',
     );
   const { taskData } = await queryTasks();
@@ -46,6 +52,7 @@ export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
     expires: Date.now() + 15 * 60_000,
     saving: false,
   });
+  beginPanel(ctx);
   const messages = splitMessages([
     '🗑️ Удалить эти дела?',
     ...tasks.map((task) => `• ${task.name.slice(0, 250)}`),
@@ -53,7 +60,8 @@ export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
     'Удаление произойдёт только после подтверждения.',
   ]);
   for (let index = 0; index < messages.length; index++) {
-    await ctx.reply(
+    await panelReply(
+      ctx,
       messages[index],
       index === messages.length - 1
         ? {
@@ -64,20 +72,23 @@ export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
         : {},
     );
   }
+  await removeVoiceInput(ctx);
 };
 
 export const removeByNumbers = async (ctx: BotContext, input: string) => {
   try {
     if (ctx.chat?.type !== 'private')
-      return await ctx.reply('Удаляй по номерам в личном чате.');
+      return await panelReply(ctx, 'Удаляй по номерам в личном чате.');
     const tasks = getNumberedTasks(ctx.from!.id, ctx.chat.id);
     if (!tasks)
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         'Сначала открой /list или /today — номера относятся к последнему показанному списку.',
       );
     const numbers = parseTaskNumbers(input);
     if (numbers.some((number) => number > tasks.length))
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         'Такого номера нет в последнем списке. Проверь /list.',
       );
     await previewRemoval(
@@ -103,13 +114,18 @@ export const removeByVoice = async (ctx: BotContext, transcript: string) => {
       numberedTasks([...taskData.uncompleted, ...taskData.completed]);
     const selection = await generateVoiceRemoval(transcript, tasks);
     if (selection.mode !== 'delete')
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         'Скажи отдельно, какие дела удалить, без добавления новых: «удали дело про продукты» или «удали первое и третье».',
       );
     if (selection.byNumber && !snapshot)
-      return await ctx.reply('Для удаления по номерам сначала открой /list.');
+      return await panelReply(
+        ctx,
+        'Для удаления по номерам сначала открой /list.',
+      );
     if (selection.numbers.some((number) => number > tasks.length))
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         'Не распознал номера. Обнови /list и попробуй ещё раз.',
       );
     await previewRemoval(
@@ -149,7 +165,7 @@ export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
     if (ctx.match[1] === 'no') {
       pending.delete(id);
-      await ctx.editMessageText('Отменено. Дела сохранены.');
+      await panelReply(ctx, 'Отменено. Дела сохранены.');
       return;
     }
     draft.saving = true;
@@ -159,7 +175,8 @@ export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
       if (!(await saveTasks(updated, metadata)))
         throw new Error('Save not confirmed');
       pending.delete(id);
-      await ctx.editMessageText(
+      await panelReply(
+        ctx,
         `✅ Удалено дел: ${draft.tasks.length}.\nОткрой /list для новых номеров.`,
       );
       const ops = draft.tasks

@@ -4,6 +4,7 @@ import { COMMON_TIMEZONES, Command } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { extractArg } from '../utils/index.js';
@@ -58,14 +59,14 @@ export const applyTimezone = async (ctx: BotContext, timezone: string) => {
     const oldTimezone = metadata.timezone;
 
     if (oldTimezone === timezone) {
-      return ctx.reply(`Timezone is already set to: ${timezone}`);
+      return panelReply(ctx, `Timezone is already set to: ${timezone}`);
     }
 
     metadata.timezone = timezone;
 
     if (!oldTimezone) {
       await saveTasks(taskData, metadata);
-      return ctx.reply(`✅ Timezone set to: *${timezone}*`, {
+      return panelReply(ctx, `✅ Timezone set to: *${timezone}*`, {
         parse_mode: 'Markdown',
       });
     }
@@ -94,7 +95,8 @@ export const applyTimezone = async (ctx: BotContext, timezone: string) => {
 
     await saveTasks(taskData, metadata);
 
-    await ctx.reply(
+    await panelReply(
+      ctx,
       `✅ Timezone updated to: *${timezone}*\n\nAll task dates and times have been converted to the new timezone.`,
       { parse_mode: 'Markdown' },
     );

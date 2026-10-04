@@ -4,6 +4,7 @@ import { type Composer, InlineKeyboard } from 'grammy';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
+import { panelReply } from '../services/chatPanel.js';
 import { getQuadrant, QUADRANTS, setQuadrant } from '../services/eisenhower.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
@@ -59,7 +60,8 @@ export const menuCommand = async (ctx: BotContext) => {
   newState(ctx);
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
-  await ctx.reply(
+  await panelReply(
+    ctx,
     'Выбирай действие кнопками. Дела можно добавлять текстом или ГС.',
     { reply_markup: mainKeyboard() },
   );
@@ -79,18 +81,24 @@ const showTasks = async (ctx: BotContext, today = false) => {
   );
   const state = newState(ctx);
   state.tasks = structuredClone(tasks);
-  for (const message of splitMessages([
+  const messages = splitMessages([
     today ? `📋 Сегодня · ${date}` : '📚 Все незавершённые дела',
     '',
     ...matrixLines(tasks),
-  ]))
-    await ctx.reply(message);
+  ]);
+  for (const message of messages.slice(0, -1)) await panelReply(ctx, message);
   rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, tasks);
-  if (!tasks.length) return;
-  await showPicker(ctx, state, 0);
+  if (!tasks.length)
+    return await panelReply(ctx, messages[messages.length - 1]);
+  await showPicker(ctx, state, 0, messages[messages.length - 1]);
 };
 
-const showPicker = async (ctx: BotContext, state: MenuState, page: number) => {
+const showPicker = async (
+  ctx: BotContext,
+  state: MenuState,
+  page: number,
+  list?: string,
+) => {
   const tasks = state.tasks ?? [];
   const keyboard = new InlineKeyboard();
   for (
@@ -108,8 +116,9 @@ const showPicker = async (ctx: BotContext, state: MenuState, page: number) => {
   if ((page + 1) * 8 < tasks.length)
     keyboard.text('▶️', `menu:page:${state.id}:${page + 1}`);
   keyboard.row().text('🏠 Меню', 'menu:home');
-  await ctx.reply(
-    'Нажми на дело, чтобы выполнить, изменить важность или удалить:',
+  await panelReply(
+    ctx,
+    `${list ? `${list}\n\n` : ''}Нажми на дело, чтобы открыть действия:`,
     { reply_markup: keyboard },
   );
 };
@@ -149,7 +158,8 @@ const showReminders = async (ctx: BotContext) => {
     .text('🔔 Проверить', 'menu:test')
     .row()
     .text('Назад', 'menu:settings');
-  await ctx.reply(
+  await panelReply(
+    ctx,
     `🔔 Напоминания ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nСообщения со списком дел будут приходить в выбранное время.`,
     { reply_markup: keyboard },
   );
@@ -168,7 +178,7 @@ const writeTimes = async (
   )
     throw new Error('Reminder settings changed');
   if (!metadata.timezone)
-    return await ctx.reply('Сначала выбери часовой пояс в настройках.');
+    return await panelReply(ctx, 'Сначала выбери часовой пояс в настройках.');
   const schedule = times.length ? parseReminderTimes(times.join(',')) : [];
   const active =
     enabled ?? (!!metadata.reminder_times && metadata.reminder_times !== 'off');
@@ -210,7 +220,7 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
     )
     .row()
     .text('🏠 Меню', 'menu:home');
-  await ctx.reply(`${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}`, {
+  await panelReply(ctx, `${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}`, {
     reply_markup: keyboard,
   });
 };
@@ -226,7 +236,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         if (text === MENU.home) return await menuCommand(ctx);
         if (text === MENU.settings) {
           newState(ctx);
-          return await ctx.reply('⚙️ Настройки', {
+          return await panelReply(ctx, '⚙️ Настройки', {
             reply_markup: settingsKeyboard(),
           });
         }
@@ -236,7 +246,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         }
         if (text === MENU.add) {
           newState(ctx).input = 'brain';
-          return await ctx.reply(
+          return await panelReply(
+            ctx,
             'Напиши дела одним сообщением или отправь ГС. Для отмены нажми «🏠 Меню».',
           );
         }
@@ -253,7 +264,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         return await processBrainInput(ctx, text);
       }
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text))
-        return await ctx.reply(
+        return await panelReply(
+          ctx,
           'Введи время как 09:30 или нажми «🏠 Меню» для отмены.',
         );
       await saveSelectedTime(ctx, state, text);
@@ -302,14 +314,14 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (action === 'home') return await menuCommand(ctx);
       if (action === 'settings') {
         newState(ctx);
-        return await ctx.reply('⚙️ Настройки', {
+        return await panelReply(ctx, '⚙️ Настройки', {
           reply_markup: settingsKeyboard(),
         });
       }
       if (action === 'reminders') return await showReminders(ctx);
       if (action === 'timezone') {
         newState(ctx);
-        return await ctx.reply('🌍 Выбери часовой пояс:', {
+        return await panelReply(ctx, '🌍 Выбери часовой пояс:', {
           reply_markup: new InlineKeyboard()
             .text('Берлин / Мюнхен', 'menu:tz:Europe/Berlin')
             .row()
@@ -343,7 +355,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           '',
           ...matrixLines(tasks),
         ]))
-          await ctx.reply(message);
+          await panelReply(ctx, message);
         rememberTaskNumbers(ctx.from.id, ctx.chat.id, tasks);
         return;
       }
@@ -364,17 +376,17 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (action === 'slot') {
         state.id = randomUUID().slice(0, 8);
         state.timeIndex = value === 'new' ? undefined : Number(value);
-        return await ctx.reply('Выбери час:', {
+        return await panelReply(ctx, 'Выбери час:', {
           reply_markup: timeKeyboard(state.id),
         });
       }
       if (action === 'hour')
-        return await ctx.reply('Выбери минуты:', {
+        return await panelReply(ctx, 'Выбери минуты:', {
           reply_markup: timeKeyboard(state.id, value),
         });
       if (action === 'custom') {
         state.input = 'time';
-        return await ctx.reply('Введи время: HH:MM, например 09:20.');
+        return await panelReply(ctx, 'Введи время: HH:MM, например 09:20.');
       }
       if (action === 'time')
         return await saveSelectedTime(
@@ -393,7 +405,9 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         QUADRANTS.forEach((title, index) => {
           keyboard.text(title, `menu:q:${state.id}:${index + 1}`).row();
         });
-        return await ctx.reply('Выбери раздел:', { reply_markup: keyboard });
+        return await panelReply(ctx, 'Выбери раздел:', {
+          reply_markup: keyboard,
+        });
       }
       const task = state.selected;
       if (!task) return;
@@ -402,7 +416,10 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         (live) => taskFingerprint(live) === taskFingerprint(task),
       );
       if (index < 0)
-        return await ctx.reply('Дело изменилось. Открой «📚 Все дела» заново.');
+        return await panelReply(
+          ctx,
+          'Дело изменилось. Открой «📚 Все дела» заново.',
+        );
       if (action === 'delete') return await previewRemoval(ctx, [task]);
       if (action === 'edit') return await enterEditScene(ctx, index, task);
       if (action === 'done') {
@@ -411,7 +428,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         taskData.completed.unshift(live);
         await saveTasks(taskData, metadata);
         newState(ctx);
-        return await ctx.reply(`✅ Готово: ${task.name}`, {
+        return await panelReply(ctx, `✅ Готово: ${task.name}`, {
           reply_markup: mainKeyboard(),
         });
       }

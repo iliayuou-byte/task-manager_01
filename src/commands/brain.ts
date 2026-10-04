@@ -5,6 +5,11 @@ import { Command } from '../core/config.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { uniqueBrainTasks } from '../services/brainDraft.js';
+import {
+  beginPanel,
+  panelReply,
+  removeVoiceInput,
+} from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { extractArg, logAndReplyError } from '../utils/index.js';
@@ -27,25 +32,30 @@ export const brainCommand = async (ctx: BotContext) => {
 export const processBrainInput = async (ctx: BotContext, input: string) => {
   try {
     if (ctx.chat?.type !== 'private') {
-      return await ctx.reply('Используй /brain в личном чате с ботом.');
+      return await panelReply(ctx, 'Используй /brain в личном чате с ботом.');
     }
     if (!input) {
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         '/brain надо сопромат 40 минут, купить продукты, завтра проверить 1С',
       );
     }
     if (input.length > 6000)
-      return await ctx.reply('Раздели текст на сообщения до 6000 символов.');
+      return await panelReply(
+        ctx,
+        'Раздели текст на сообщения до 6000 символов.',
+      );
     ctx.chatAction = 'typing';
     const { taskData, metadata } = await queryTasks();
     if (!metadata.timezone)
-      return await ctx.reply('Сначала /settimezone Europe/Berlin');
+      return await panelReply(ctx, 'Сначала /settimezone Europe/Berlin');
     const tasks = uniqueBrainTasks(
       await generateBrainTasks(input, metadata.timezone, metadata),
       taskData.uncompleted,
     );
     if (!tasks.length)
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         'Новых задач не найдено: список пуст или задачи уже есть.',
       );
     for (const [key, draft] of drafts) {
@@ -63,6 +73,7 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
       expires: Date.now() + 15 * 60_000,
       saving: false,
     });
+    beginPanel(ctx);
     const messages = splitMessages([
       '🧠 Предлагаю сохранить:',
       '',
@@ -70,7 +81,8 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
       'Проверь список. Черновик действует 15 минут.',
     ]);
     for (let index = 0; index < messages.length; index++) {
-      await ctx.reply(
+      await panelReply(
+        ctx,
         messages[index],
         index === messages.length - 1
           ? {
@@ -81,6 +93,7 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
           : {},
       );
     }
+    await removeVoiceInput(ctx);
   } catch (error) {
     logAndReplyError(
       ctx,
@@ -113,7 +126,7 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
     if (ctx.match[1] === 'no') {
       drafts.delete(id);
-      await ctx.editMessageText('Черновик отменён. Задачи не добавлены.');
+      await panelReply(ctx, 'Черновик отменён. Задачи не добавлены.');
       return;
     }
     draft.saving = true;
@@ -126,7 +139,8 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
           throw new Error('Storage did not confirm save');
       }
       drafts.delete(id);
-      await ctx.editMessageText(
+      await panelReply(
+        ctx,
         `✅ Добавлено задач: ${additions.length}.\n\n${additions.map((task) => `• ${task.name}`).join('\n')}\n\n/now — следующий шаг\n/list — весь список`,
       );
     } catch (error) {

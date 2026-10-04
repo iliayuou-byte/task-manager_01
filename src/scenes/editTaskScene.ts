@@ -4,6 +4,7 @@ import { Command, EDITABLE_FIELDS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { EditableField, Priority, Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { taskFingerprint } from '../services/taskNumbers.js';
@@ -68,7 +69,7 @@ export const enterEditScene = async (
   const task = taskData.uncompleted[taskIdx];
 
   if (!task) {
-    await ctx.reply('❌ Task not found.');
+    await panelReply(ctx, '❌ Task not found.');
     return;
   }
 
@@ -78,7 +79,8 @@ export const enterEditScene = async (
     fingerprint: taskFingerprint(task),
   };
 
-  await ctx.reply(
+  await panelReply(
+    ctx,
     `Select a field to edit for *${escapeMarkdownV2(task.name)}*:`,
     {
       parse_mode: 'MarkdownV2',
@@ -97,13 +99,14 @@ editSceneComposer.callbackQuery(/^edit_(.+)$/, async (ctx) => {
 
   if (action === 'cancel') {
     ctx.session.editScene = undefined;
-    await ctx.editMessageText('❌ Edit cancelled.');
+    await panelReply(ctx, '❌ Edit cancelled.');
     return;
   }
 
   if (isValidField(action)) {
     state.field = action;
-    await ctx.editMessageText(
+    await panelReply(
+      ctx,
       `✏️ Please enter the new value for *${escapeMarkdownV2(action)}*:`,
       { parse_mode: 'MarkdownV2' },
     );
@@ -118,7 +121,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
   }
 
   if (!state.field) {
-    return ctx.reply('⚠️ Please select a field first.');
+    return panelReply(ctx, '⚠️ Please select a field first.');
   }
 
   const fieldToUpdate = state.field;
@@ -129,7 +132,8 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     const { metadata, taskData } = await queryTasks();
 
     if (!metadata.timezone) {
-      await ctx.reply(
+      await panelReply(
+        ctx,
         '❌ Timezone not set. Please set your timezone first using /settimezone command.',
       );
       ctx.session.editScene = undefined;
@@ -143,7 +147,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       : state.taskIdx;
     const oldTask = taskData.uncompleted[taskIdx];
     if (!oldTask) {
-      await ctx.reply('❌ Task not found.');
+      await panelReply(ctx, '❌ Task not found.');
       ctx.session.editScene = undefined;
       return;
     }
@@ -156,7 +160,8 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     );
 
     if (!updatedTask) {
-      await ctx.reply(
+      await panelReply(
+        ctx,
         `⚠️ The new value is the same as the current one for *${escapeMarkdownV2(
           fieldToUpdate,
         )}*\\. No changes made\\.`,
@@ -185,7 +190,8 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     taskData.uncompleted[taskIdx] = updatedTask;
     await saveTasks(taskData, metadata);
 
-    await ctx.reply(
+    await panelReply(
+      ctx,
       formatOperatedTaskStr(updatedTask, {
         command: Command.EDIT,
         prefix: `✅ *${escapeMarkdownV2(state.field)}* in `,
@@ -220,7 +226,8 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       }
     }
   } catch (error) {
-    await ctx.reply(
+    await panelReply(
+      ctx,
       `❌ Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`,
     );
     logger.errorWithContext({ userId, op: Command.EDIT, error });

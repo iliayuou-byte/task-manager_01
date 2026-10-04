@@ -1,6 +1,7 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { rememberTaskNumbers } from '../services/taskNumbers.js';
 import { logAndReplyError } from '../utils/index.js';
@@ -12,7 +13,8 @@ export const todayCommand = async (ctx: BotContext) => {
     const { taskData, metadata } = await queryTasks();
 
     if (!metadata.timezone) {
-      return ctx.reply(
+      return panelReply(
+        ctx,
         '❌ Timezone not set. Please set your timezone first using /settimezone command.',
       );
     }
@@ -24,7 +26,7 @@ export const todayCommand = async (ctx: BotContext) => {
     );
 
     if (todaysTasks.length === 0) {
-      return ctx.reply('📭 No tasks for today!');
+      return panelReply(ctx, '📭 No tasks for today!');
     }
 
     for (const message of splitMessages([
@@ -32,7 +34,7 @@ export const todayCommand = async (ctx: BotContext) => {
       '',
       ...matrixLines(todaysTasks),
     ])) {
-      await ctx.reply(message);
+      await panelReply(ctx, message);
     }
     if (ctx.from && ctx.chat)
       rememberTaskNumbers(ctx.from.id, ctx.chat.id, todaysTasks);

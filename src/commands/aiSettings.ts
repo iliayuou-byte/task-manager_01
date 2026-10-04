@@ -9,6 +9,7 @@ import {
   priorityRules,
 } from '../services/aiPriorities.js';
 import { eisenhowerSettingsKey } from '../services/aiSettingsKey.js';
+import { beginPanel, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { logAndReplyError } from '../utils/index.js';
@@ -40,7 +41,9 @@ const stateFor = (ctx: BotContext, metadata: Metadata): State => {
 const showSettings = async (ctx: BotContext) => {
   const { metadata } = await queryTasks();
   const state = stateFor(ctx, metadata);
-  await ctx.reply(
+  beginPanel(ctx);
+  await panelReply(
+    ctx,
     `🧠 Приоритеты ИИ\nАвтораспределение новых дел: ${metadata.ai_auto_priority === 'off' ? 'выключено' : 'включено'}\n\nМои правила:\n${priorityRules(metadata)}\n\nРучной выбор раздела защищён от перераспределения. При нехватке информации ИИ оставит раздел как есть и укажет, чего не хватает.`,
     {
       reply_markup: new InlineKeyboard()
@@ -76,7 +79,7 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
     }
     if (!state?.rules || state.expires < Date.now()) return next();
     if (text.length > 2000)
-      return await ctx.reply('Сократи правила до 2000 символов.');
+      return await panelReply(ctx, 'Сократи правила до 2000 символов.');
     try {
       const { taskData, metadata } = await queryTasks();
       if (eisenhowerSettingsKey(metadata) !== state.settings)
@@ -84,7 +87,8 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
       metadata.ai_priority_rules = text;
       if (!(await saveTasks(taskData, metadata)))
         throw new Error('Save not confirmed');
-      await ctx.reply(
+      await panelReply(
+        ctx,
         '✅ Правила сохранены. Они применятся к новым делам; для старых нажми «Разобрать текущие дела».',
       );
       await showSettings(ctx);
@@ -104,7 +108,8 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
   composer.on('message:voice', async (ctx, next) => {
     const state = pending.get(key(ctx));
     if (state?.rules && state.expires >= Date.now())
-      return await ctx.reply(
+      return await panelReply(
+        ctx,
         'Пришли правила текстом или нажми «🏠 Меню» для отмены.',
       );
     return next();
@@ -137,7 +142,8 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
         throw new Error('Settings changed');
       if (action === 'rules') {
         state.rules = true;
-        return await ctx.reply(
+        return await panelReply(
+          ctx,
           'Напиши свои правила одним текстовым сообщением (до 2000 символов). Например: «Учёба и работа важные. Срочно — реальный дедлайн в ближайшие два дня. Покупки обычно менее важные, кроме лекарств. Не придумывай сроки».',
           {
             reply_markup: new InlineKeyboard().text(
@@ -162,14 +168,17 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
           (task) => !task.completed && !task.priorityLocked,
         );
         if (!tasks.length)
-          return await ctx.reply(
+          return await panelReply(
+            ctx,
             'Нет дел для распределения. Ручные разделы защищены; в карточке дела можно снова разрешить ИИ менять раздел.',
           );
         if (tasks.length > 30)
-          return await ctx.reply(
+          return await panelReply(
+            ctx,
             'За один раз можно разобрать до 30 дел. Сначала заверши или убери лишние.',
           );
-        await ctx.reply(
+        await panelReply(
+          ctx,
           '🧠 Предлагаю распределение… Это может занять немного времени.',
         );
         const proposals = await classifyTaskPriorities(tasks, metadata);
@@ -177,7 +186,8 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
         state.id = randomUUID().slice(0, 8);
         state.expires = Date.now() + 15 * 60_000;
         state.proposals = proposals;
-        for (const message of splitMessages([
+        beginPanel(ctx);
+        const messages = splitMessages([
           '🗂 Предлагаемое распределение',
           'Разделы: 1 — важно и срочно; 2 — важно, не срочно; 3 — не важно, срочно; 4 — не важно и не срочно.',
           '',
@@ -185,23 +195,30 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
             (item, index) =>
               `${index + 1}. ${item.task.name.replace(/\s+/g, ' ')} → ${item.quadrant === null ? 'оставить как есть' : `раздел ${item.quadrant}`}\n${item.reason}`,
           ),
-        ]))
-          await ctx.reply(message);
-        return await ctx.reply(
+          '',
           'Сохранить предложенные разделы? Ручные разделы останутся как есть.',
-          {
-            reply_markup: new InlineKeyboard()
-              .text('✅ Сохранить', `ai:save:${state.id}`)
-              .text('Отмена', `ai:cancel:${state.id}`),
-          },
-        );
+        ]);
+        for (let index = 0; index < messages.length; index++)
+          await panelReply(
+            ctx,
+            messages[index],
+            index === messages.length - 1
+              ? {
+                  reply_markup: new InlineKeyboard()
+                    .text('✅ Сохранить', `ai:save:${state.id}`)
+                    .text('Отмена', `ai:cancel:${state.id}`),
+                }
+              : {},
+          );
+        return;
       }
       if (action === 'save' && state.proposals) {
         const updated = applyPriorityProposals(taskData, state.proposals);
         if (!(await saveTasks(updated, metadata)))
           throw new Error('Save not confirmed');
         pending.delete(key(ctx));
-        await ctx.reply(
+        await panelReply(
+          ctx,
           '✅ Разделы сохранены. Открой «📚 Все дела», чтобы увидеть новый список.',
         );
         return await showSettings(ctx);

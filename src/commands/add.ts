@@ -3,6 +3,7 @@ import { generateAiTask } from '../clients/ai.js';
 import { Command } from '../core/config.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -19,7 +20,7 @@ import { getNoTextMessage } from '../views/generalView.js';
 
 export const addCommand = async (ctx: BotContext) => {
   if (!ctx.message || !('text' in ctx.message)) {
-    return ctx.reply(getNoTextMessage(Command.ADD));
+    return panelReply(ctx, getNoTextMessage(Command.ADD));
   }
   ctx.chatAction = 'typing';
 
@@ -28,7 +29,8 @@ export const addCommand = async (ctx: BotContext) => {
 
   if (!arg) {
     ctx.session.awaitingAdd = true;
-    return ctx.reply(
+    return panelReply(
+      ctx,
       '📝 What task would you like to add?\n\n_e.g. "Buy groceries tomorrow at 15:00 #shopping"_',
       {
         parse_mode: 'Markdown',
@@ -46,7 +48,7 @@ export const addSceneComposer = new Composer<BotContext>();
 addSceneComposer.callbackQuery('add_cancel', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.awaitingAdd = undefined;
-  await ctx.editMessageText('❌ Add cancelled.');
+  await panelReply(ctx, '❌ Add cancelled.');
 });
 
 addSceneComposer.on('message:text', async (ctx, next) => {
@@ -63,7 +65,8 @@ const processAdd = async (ctx: BotContext, input: string) => {
     const { metadata, taskData } = await queryTasks();
 
     if (!metadata.timezone) {
-      return ctx.reply(
+      return panelReply(
+        ctx,
         '❌ Timezone not set. Please set your timezone first using /settimezone command.',
       );
     }
@@ -72,7 +75,8 @@ const processAdd = async (ctx: BotContext, input: string) => {
     try {
       task = await processNewTask(input, metadata.timezone, metadata);
     } catch (error) {
-      return ctx.reply(
+      return panelReply(
+        ctx,
         `❌ ${error instanceof Error ? error.message : 'Failed to add task due to an unknown error.'}`,
       );
     }
@@ -83,7 +87,8 @@ const processAdd = async (ctx: BotContext, input: string) => {
     );
 
     if (timeConflictingTask) {
-      return ctx.reply(
+      return panelReply(
+        ctx,
         `❌ Time conflict with existing task: "${timeConflictingTask.name}" (Date: ${timeConflictingTask.date}, Time: ${formatTimeRange(timeConflictingTask.time!, timeConflictingTask.duration!)})`,
       );
     }
@@ -97,7 +102,7 @@ const processAdd = async (ctx: BotContext, input: string) => {
       prefix: '✅ ',
     });
 
-    await ctx.reply(response, { parse_mode: 'MarkdownV2' });
+    await panelReply(ctx, response, { parse_mode: 'MarkdownV2' });
 
     if (task.date && task.time) {
       await promptCalendarAction(ctx, 'Add this task to Google Calendar?', [

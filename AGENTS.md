@@ -144,3 +144,7 @@ src/
 ### AI priority preferences
 
 `commands/aiSettings.ts` manages private-chat preferences and confirmed reclassification. `services/aiPriorities.ts` builds priority-only personal instructions and validates immutable task proposals. `ai_auto_priority` and JSON-encoded `ai_priority_rules` persist in Markdown frontmatter. Task `priorityLocked` column protects manual quadrant choices; new columns append to maintain legacy row compatibility. `/add`, `/brain` and name editing pass metadata into AI generation. Register AI settings before menu/scenes so rule entry and cancellation route correctly.
+
+### Clean chat panels
+
+`services/chatPanel.ts` tracks private-chat UI message groups in memory. Use `panelReply` for transient screens and `beginPanel` between progress and results within one update. It edits one-message panels or replaces multipart panels after successful send; cleanup is best effort. Errors and scheduled reminders use ordinary replies and remain in history. Voice input is removed only after a successful confirmation preview. Do not globally intercept sendMessage or sweep untracked chat history.

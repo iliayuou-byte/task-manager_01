@@ -1,6 +1,7 @@
 import { generateTaskPickerKeyboard } from '../actions/taskPicker.js';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -19,7 +20,7 @@ export const completeCommand = async (ctx: BotContext) => {
   try {
     ctx.chatAction = 'typing';
     if (!ctx.message || !('text' in ctx.message)) {
-      return ctx.reply(getNoTextMessage(Command.COMPLETE));
+      return panelReply(ctx, getNoTextMessage(Command.COMPLETE));
     }
 
     const text = ctx.message.text!;
@@ -27,8 +28,9 @@ export const completeCommand = async (ctx: BotContext) => {
 
     if (!arg) {
       const { taskData } = await queryTasks();
-      if (taskData.uncompleted.length === 0) return ctx.reply(NO_TASK_MESSAGE);
-      return ctx.reply('Select a task to complete:', {
+      if (taskData.uncompleted.length === 0)
+        return panelReply(ctx, NO_TASK_MESSAGE);
+      return panelReply(ctx, 'Select a task to complete:', {
         reply_markup: generateTaskPickerKeyboard(
           taskData.uncompleted,
           'complete',
@@ -41,13 +43,13 @@ export const completeCommand = async (ctx: BotContext) => {
     const { taskData, metadata } = await queryTasks();
     const taskIdx = findTaskIdxByName(taskData.uncompleted, arg);
     if (taskIdx === -1) {
-      return ctx.reply(TASK_NOT_FOUND_MESSAGE);
+      return panelReply(ctx, TASK_NOT_FOUND_MESSAGE);
     }
 
     markTaskCompleted(taskData.uncompleted[taskIdx], metadata.timezone);
     await saveTasks(taskData, metadata);
 
-    ctx.reply(`✅ Completed: ${arg}`);
+    panelReply(ctx, `✅ Completed: ${arg}`);
   } catch (error) {
     logAndReplyError(
       ctx,

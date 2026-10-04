@@ -1,6 +1,7 @@
 import { Command } from '../core/config.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { rememberTaskNumbers } from '../services/taskNumbers.js';
 import { extractArg, logAndReplyError, parseTags } from '../utils/index.js';
@@ -30,7 +31,8 @@ export const listCommand = async (ctx: BotContext) => {
       // Filter by tags
       const filterTags = parseTags(arg);
       if (filterTags.length === 0) {
-        return ctx.reply(
+        return panelReply(
+          ctx,
           '❌ Invalid filter. Use /list, /list all, or /list #tag',
         );
       }
@@ -46,7 +48,7 @@ export const listCommand = async (ctx: BotContext) => {
     }
 
     if (tasksToDisplay.length === 0) {
-      return ctx.reply(NO_TASK_MESSAGE);
+      return panelReply(ctx, NO_TASK_MESSAGE);
     }
 
     for (const message of splitMessages([
@@ -54,7 +56,7 @@ export const listCommand = async (ctx: BotContext) => {
       '',
       ...matrixLines(tasksToDisplay),
     ])) {
-      await ctx.reply(message);
+      await panelReply(ctx, message);
     }
     if (ctx.from && ctx.chat)
       rememberTaskNumbers(ctx.from.id, ctx.chat.id, tasksToDisplay);
