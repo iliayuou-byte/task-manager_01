@@ -34,7 +34,7 @@ export const addCommand = async (ctx: BotContext) => {
       '📝 What task would you like to add?\n\n_e.g. "Buy groceries tomorrow at 15:00 #shopping"_',
       {
         parse_mode: 'Markdown',
-        reply_markup: new InlineKeyboard().text('❌ Cancel', 'add_cancel'),
+        reply_markup: new InlineKeyboard().text('⬅️ Назад', 'add_cancel'),
       },
     );
   }
@@ -48,7 +48,8 @@ export const addSceneComposer = new Composer<BotContext>();
 addSceneComposer.callbackQuery('add_cancel', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.awaitingAdd = undefined;
-  await panelReply(ctx, '❌ Add cancelled.');
+  const { menuCommand } = await import('./menu.js');
+  await menuCommand(ctx);
 });
 
 addSceneComposer.on('message:text', async (ctx, next) => {

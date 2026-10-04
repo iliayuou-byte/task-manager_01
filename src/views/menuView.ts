@@ -9,6 +9,7 @@ export const MENU = {
   remove: '🗑 Удалить',
   settings: '⚙️ Настройки',
   home: '🏠 Меню',
+  back: '⬅️ Назад',
 } as const;
 
 export const mainKeyboard = () =>
@@ -24,6 +25,8 @@ export const mainKeyboard = () =>
     .row()
     .text(MENU.settings)
     .text(MENU.home)
+    .row()
+    .text(MENU.back)
     .resized()
     .persistent();
 
@@ -35,7 +38,8 @@ export const settingsKeyboard = () =>
     .row()
     .text('🌍 Часовой пояс', 'menu:timezone')
     .row()
-    .text('🏠 Главное меню', 'menu:home');
+    .text('⬅️ Назад', 'menu:home')
+    .text('🏠 Меню', 'menu:home');
 
 export const timeKeyboard = (id: string, hour?: string): InlineKeyboard => {
   const keyboard = new InlineKeyboard();
@@ -53,5 +57,9 @@ export const timeKeyboard = (id: string, hour?: string): InlineKeyboard => {
   return keyboard
     .text('✏️ Ввести HH:MM', `menu:custom:${id}`)
     .row()
-    .text('Назад', 'menu:reminders');
+    .text('⬅️ Назад', hour === undefined ? 'menu:reminders' : `menu:hours:${id}`)
+    .text('🏠 Меню', 'menu:home');
 };
+
+export const navigationKeyboard = (back = 'menu:back') =>
+  new InlineKeyboard().text('⬅️ Назад', back).text('🏠 Меню', 'menu:home');

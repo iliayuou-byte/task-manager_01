@@ -19,12 +19,13 @@ import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import {
   MENU,
   mainKeyboard,
+  navigationKeyboard,
   settingsKeyboard,
   timeKeyboard,
 } from '../views/menuView.js';
-import { processBrainInput } from './brain.js';
+import { cancelBrainDrafts, processBrainInput } from './brain.js';
 import { showNow } from './now.js';
-import { previewRemoval } from './removeSelected.js';
+import { cancelRemovalDrafts, previewRemoval } from './removeSelected.js';
 import { applyTimezone } from './timezone.js';
 
 interface MenuState {
@@ -35,6 +36,7 @@ interface MenuState {
   selected?: Task;
   times?: string[];
   timeIndex?: number;
+  timeHour?: string;
   originalTimes?: string;
   originalSaved?: string;
   busy?: boolean;
@@ -57,6 +59,8 @@ export const clearMenuInput = (ctx: BotContext) => {
 };
 
 export const menuCommand = async (ctx: BotContext) => {
+  cancelBrainDrafts(ctx);
+  cancelRemovalDrafts(ctx);
   newState(ctx);
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
@@ -67,7 +71,7 @@ export const menuCommand = async (ctx: BotContext) => {
   );
 };
 
-const showTasks = async (ctx: BotContext, today = false) => {
+export const showTasks = async (ctx: BotContext, today = false) => {
   const { taskData, metadata } = await queryTasks();
   const date = formatInTimeZone(
     new Date(),
@@ -115,7 +119,7 @@ const showPicker = async (
   if (page > 0) keyboard.text('◀️', `menu:page:${state.id}:${page - 1}`);
   if ((page + 1) * 8 < tasks.length)
     keyboard.text('▶️', `menu:page:${state.id}:${page + 1}`);
-  keyboard.row().text('🏠 Меню', 'menu:home');
+  keyboard.row().text('⬅️ Назад', 'menu:home').text('🏠 Меню', 'menu:home');
   await panelReply(
     ctx,
     `${list ? `${list}\n\n` : ''}Нажми на дело, чтобы открыть действия:`,
@@ -219,6 +223,7 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
       `menu:lock:${state.id}`,
     )
     .row()
+    .text('⬅️ Назад', `menu:tasks:${state.id}`)
     .text('🏠 Меню', 'menu:home');
   await panelReply(ctx, `${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}`, {
     reply_markup: keyboard,
@@ -234,6 +239,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         ctx.session.awaitingAdd = undefined;
         ctx.session.editScene = undefined;
         if (text === MENU.home) return await menuCommand(ctx);
+        if (text === MENU.back) return await backToTask(ctx);
         if (text === MENU.settings) {
           newState(ctx);
           return await panelReply(ctx, '⚙️ Настройки', {
@@ -244,13 +250,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           newState(ctx);
           return await showNow(ctx);
         }
-        if (text === MENU.add) {
-          newState(ctx).input = 'brain';
-          return await panelReply(
-            ctx,
-            'Напиши дела одним сообщением или отправь ГС. Для отмены нажми «🏠 Меню».',
-          );
-        }
+        if (text === MENU.add) return await showAddPrompt(ctx);
         return await showTasks(ctx, text === MENU.today);
       }
       const state = states.get(ctx.from.id);
@@ -312,6 +312,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       ctx.session.awaitingAdd = undefined;
       ctx.session.editScene = undefined;
       if (action === 'home') return await menuCommand(ctx);
+      if (action === 'back') return await backToTask(ctx);
       if (action === 'settings') {
         newState(ctx);
         return await panelReply(ctx, '⚙️ Настройки', {
@@ -373,20 +374,46 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           state,
           (state.times ?? []).filter((_, index) => index !== Number(value)),
         );
+      if (action === 'tasks' && state.tasks) {
+        state.input = undefined;
+        return await showPicker(ctx, state, 0);
+      }
+      if (action === 'card' && state.selected)
+        return await card(ctx, state, state.selected);
+      if (action === 'minutes') {
+        state.input = undefined;
+        return await panelReply(ctx, 'Выбери минуты:', {
+          reply_markup: timeKeyboard(state.id, state.timeHour),
+        });
+      }
+      if (action === 'hours') {
+        state.input = undefined;
+        state.timeHour = undefined;
+        return await panelReply(ctx, 'Выбери час:', {
+          reply_markup: timeKeyboard(state.id),
+        });
+      }
       if (action === 'slot') {
         state.id = randomUUID().slice(0, 8);
+        state.timeHour = undefined;
         state.timeIndex = value === 'new' ? undefined : Number(value);
         return await panelReply(ctx, 'Выбери час:', {
           reply_markup: timeKeyboard(state.id),
         });
       }
-      if (action === 'hour')
+      if (action === 'hour') {
+        state.timeHour = value;
         return await panelReply(ctx, 'Выбери минуты:', {
           reply_markup: timeKeyboard(state.id, value),
         });
+      }
       if (action === 'custom') {
         state.input = 'time';
-        return await panelReply(ctx, 'Введи время: HH:MM, например 09:20.');
+        return await panelReply(ctx, 'Введи время: HH:MM, например 09:20.', {
+          reply_markup: navigationKeyboard(
+            `menu:${state.timeHour ? 'minutes' : 'hours'}:${state.id}`,
+          ),
+        });
       }
       if (action === 'time')
         return await saveSelectedTime(
@@ -405,6 +432,10 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         QUADRANTS.forEach((title, index) => {
           keyboard.text(title, `menu:q:${state.id}:${index + 1}`).row();
         });
+        keyboard
+          .row()
+          .text('⬅️ Назад', `menu:card:${state.id}`)
+          .text('🏠 Меню', 'menu:home');
         return await panelReply(ctx, 'Выбери раздел:', {
           reply_markup: keyboard,
         });
@@ -462,4 +493,26 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (state) state.busy = false;
     }
   });
+};
+
+export const showAddPrompt = async (ctx: BotContext) => {
+  cancelBrainDrafts(ctx);
+  cancelRemovalDrafts(ctx);
+  ctx.session.awaitingAdd = undefined;
+  ctx.session.editScene = undefined;
+  newState(ctx).input = 'brain';
+  await panelReply(ctx, 'Напиши дела одним сообщением или отправь ГС.', {
+    reply_markup: navigationKeyboard('menu:home'),
+  });
+};
+
+export const backToTask = async (ctx: BotContext) => {
+  ctx.session.awaitingAdd = undefined;
+  ctx.session.editScene = undefined;
+  const state = ctx.from && states.get(ctx.from.id);
+  if (!state || state.expires < Date.now()) return await menuCommand(ctx);
+  state.input = undefined;
+  if (state.selected) return await card(ctx, state, state.selected);
+  if (state.tasks) return await showPicker(ctx, state, 0);
+  return await menuCommand(ctx);
 };

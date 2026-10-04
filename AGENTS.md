@@ -148,3 +148,7 @@ src/
 ### Clean chat panels
 
 `services/chatPanel.ts` tracks private-chat UI message groups in memory. Use `panelReply` for transient screens and `beginPanel` between progress and results within one update. It edits one-message panels or replaces multipart panels after successful send; cleanup is best effort. Errors and scheduled reminders use ordinary replies and remain in history. Voice input is removed only after a successful confirmation preview. Do not globally intercept sendMessage or sweep untracked chat history.
+
+### Navigation
+
+`panelReply` ensures inline screens have Back and Home controls, while persistent keyboard includes a Back key. Supply explicit parent callbacks where needed: time selection, task cards, importance, edit fields and confirmation flows. Home cancels unsaved brain/removal drafts and input/scenes. Validate ownership and draft expiry before navigation or confirmation; stale buttons must not save after Home.

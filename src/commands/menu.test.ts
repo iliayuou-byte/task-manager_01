@@ -3,10 +3,13 @@ import { Bot } from 'grammy';
 import * as aiClient from '../clients/ai.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { editSceneComposer } from '../scenes/editTaskScene.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
+import { registerBrainActions } from './brain.js';
 import { registerMenu } from './menu.js';
+import { registerSelectedRemoval } from './removeSelected.js';
 
 const spies: Array<{ mockRestore(): void }> = [];
 afterEach(() => {
@@ -68,12 +71,16 @@ const fixture = (user: number) => {
           : true,
     } as Awaited<ReturnType<typeof _prev>>;
   });
+  const session = {};
   bot.use(async (ctx, next) => {
-    ctx.session = {};
+    ctx.session = session;
     await next();
   });
   registerAiSettings(bot);
   registerMenu(bot);
+  registerBrainActions(bot);
+  registerSelectedRemoval(bot);
+  bot.use(editSceneComposer);
   const from = { id: user, is_bot: false, first_name: 'User' };
   const message = {
     message_id: 1,
@@ -205,4 +212,76 @@ test('existing task classification previews before saving and skips manual locks
   await f.click(f.button('Сохранить'));
   expect(f.data().taskData.uncompleted[0].important).toBe(false);
   expect(f.data().taskData.uncompleted[1].priorityLocked).toBe(true);
+});
+
+test('time navigation goes one step back and home clears pending input', async () => {
+  const f = fixture(507);
+  await f.click('menu:reminders');
+  await f.click(f.button('09:00 — изменить'));
+  await f.click(f.button('08'));
+  await f.click(f.button('Назад'));
+  expect(f.calls[f.calls.length - 1].text).toBe('Выбери час:');
+  await f.click(f.button('Назад'));
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('Напоминания');
+  await f.click(f.button('09:00 — изменить'));
+  await f.click(f.button('Ввести HH:MM'));
+  await f.click(f.button('🏠 Меню'));
+  await f.text('08:20');
+  expect(f.data().metadata.reminder_times).toBe('09:00,19:00');
+});
+
+test('task importance and removal go back without saving changes', async () => {
+  const f = fixture(508);
+  await f.text(MENU.all);
+  await f.click(f.button('1. Первое'));
+  await f.click(f.button('Важность'));
+  await f.click(f.button('Назад'));
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('Первое');
+  await f.click(f.button('Удалить'));
+  await f.click(f.button('Назад'));
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('Первое');
+  await f.click(f.button('Назад'));
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('Нажми на дело');
+});
+
+test('brain preview back cancels draft and restores add prompt', async () => {
+  const f = fixture(509);
+  const generation = spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+    { name: 'Новое', completed: false, tags: [] },
+  ]);
+  spies.push(generation);
+  await f.text(MENU.add);
+  await f.text('Новое');
+  await f.click(f.button('Назад'));
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('Напиши дела');
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.click(f.button('🏠 Меню'));
+  await f.text('Случайный текст');
+  expect(generation).toHaveBeenCalledTimes(1);
+});
+
+test('edit input back restores fields and home exits the scene', async () => {
+  const f = fixture(510);
+  await f.text(MENU.all);
+  await f.click(f.button('1. Первое'));
+  await f.click(f.button('Изменить'));
+  await f.click(f.button('Name'));
+  await f.click(f.button('Назад'));
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('Выбери поле');
+  await f.click(f.button('🏠 Меню'));
+  await f.text('Случайный текст');
+  expect(f.data().taskData.uncompleted[0].name).toBe('Первое');
+});
+
+test('home invalidates pending deletion even if an old button survives cleanup', async () => {
+  const f = fixture(511);
+  await f.text(MENU.all);
+  await f.click(f.button('1. Первое'));
+  await f.click(f.button('Удалить'));
+  const confirm = f.button('Удалить');
+  await f.click(f.button('🏠 Меню'));
+  await f.click(confirm);
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  expect(String(f.calls[f.calls.length - 1].text)).toContain('устарело');
 });

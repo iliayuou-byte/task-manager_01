@@ -147,7 +147,7 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
           'Напиши свои правила одним текстовым сообщением (до 2000 символов). Например: «Учёба и работа важные. Срочно — реальный дедлайн в ближайшие два дня. Покупки обычно менее важные, кроме лекарств. Не придумывай сроки».',
           {
             reply_markup: new InlineKeyboard().text(
-              'Отмена',
+              '⬅️ Назад',
               `ai:cancel:${state.id}`,
             ),
           },
@@ -206,7 +206,7 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
               ? {
                   reply_markup: new InlineKeyboard()
                     .text('✅ Сохранить', `ai:save:${state.id}`)
-                    .text('Отмена', `ai:cancel:${state.id}`),
+                    .text('⬅️ Назад', `ai:cancel:${state.id}`),
                 }
               : {},
           );

@@ -30,6 +30,16 @@ const pending = new Map<
   }
 >();
 
+export const cancelRemovalDrafts = (ctx: BotContext) => {
+  for (const [id, draft] of pending)
+    if (
+      draft.owner === ctx.from?.id &&
+      draft.chat === ctx.chat?.id &&
+      !draft.saving
+    )
+      pending.delete(id);
+};
+
 export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
   if (!tasks.length)
     return await panelReply(
@@ -67,7 +77,7 @@ export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
         ? {
             reply_markup: new InlineKeyboard()
               .text('🗑️ Удалить', `del_yes:${id}`)
-              .text('Отмена', `del_no:${id}`),
+              .text('⬅️ Назад', `del_no:${id}`),
           }
         : {},
     );
@@ -165,7 +175,8 @@ export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
     if (ctx.match[1] === 'no') {
       pending.delete(id);
-      await panelReply(ctx, 'Отменено. Дела сохранены.');
+      const { backToTask } = await import('./menu.js');
+      await backToTask(ctx);
       return;
     }
     draft.saving = true;

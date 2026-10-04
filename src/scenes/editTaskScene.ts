@@ -49,7 +49,7 @@ const generateEditKeyboard = (task: Task) => {
   }
 
   // Add cancel to last row
-  keyboard.text('❌ Cancel', 'edit_cancel');
+  keyboard.text('⬅️ Назад', 'edit_cancel').text('🏠 Меню', 'menu:home');
 
   return keyboard;
 };
@@ -99,16 +99,36 @@ editSceneComposer.callbackQuery(/^edit_(.+)$/, async (ctx) => {
 
   if (action === 'cancel') {
     ctx.session.editScene = undefined;
-    await panelReply(ctx, '❌ Edit cancelled.');
+    const { backToTask } = await import('../commands/menu.js');
+    await backToTask(ctx);
     return;
   }
 
+  if (action === 'back') {
+    const { taskData } = await queryTasks();
+    const task = taskData.uncompleted.find(
+      (task) => taskFingerprint(task) === state.fingerprint,
+    );
+    if (!task) {
+      ctx.session.editScene = undefined;
+      return await panelReply(ctx, 'Дело изменилось. Открой список заново.');
+    }
+    state.field = undefined;
+    return await panelReply(ctx, 'Выбери поле для изменения:', {
+      reply_markup: generateEditKeyboard(task),
+    });
+  }
   if (isValidField(action)) {
     state.field = action;
     await panelReply(
       ctx,
       `✏️ Please enter the new value for *${escapeMarkdownV2(action)}*:`,
-      { parse_mode: 'MarkdownV2' },
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: new InlineKeyboard()
+          .text('⬅️ Назад', 'edit_back')
+          .text('🏠 Меню', 'menu:home'),
+      },
     );
   }
 });

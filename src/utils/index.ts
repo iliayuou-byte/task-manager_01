@@ -7,6 +7,7 @@ import {
   type BotContext,
   setPendingCalendarOps,
 } from '../middlewares/session.js';
+import { navigationKeyboard } from '../views/menuView.js';
 
 // Extract argument from command text
 export const extractArg = (text: string, command: string) =>
@@ -267,7 +268,10 @@ export const markTaskCompleted = (task: Task, timezone?: string) => {
 
 const calendarKeyboard = new InlineKeyboard()
   .text('Yes', 'cal_yes')
-  .text('No', 'cal_no');
+  .text('No', 'cal_no')
+  .row()
+  .text('⬅️ Назад', 'cal_no')
+  .text('🏠 Меню', 'menu:home');
 
 export const promptCalendarAction = async (
   ctx: BotContext,
@@ -285,5 +289,8 @@ export const logAndReplyError = (
   message = '❌ Something went wrong. Please try again.',
 ) => {
   logger.errorWithContext({ userId: ctx.from?.id, op, error });
-  ctx.reply(message);
+  ctx.reply(message, {
+    reply_markup:
+      ctx.chat?.type === 'private' ? navigationKeyboard() : undefined,
+  });
 };

@@ -1,4 +1,5 @@
 import type { BotContext } from '../middlewares/session.js';
+import { navigationKeyboard } from '../views/menuView.js';
 
 type ReplyOptions = Parameters<BotContext['reply']>[1];
 interface Panel {
@@ -18,6 +19,26 @@ export const panelReply = async (
   text: string,
   options?: ReplyOptions,
 ) => {
+  if (ctx.chat?.type === 'private') {
+    const markup = options?.reply_markup;
+    if (!markup) options = { ...options, reply_markup: navigationKeyboard() };
+    else if ('inline_keyboard' in markup) {
+      const rows = markup.inline_keyboard.map((row) => [...row]);
+      const buttons = rows.flat();
+      const footer = [];
+      if (!buttons.some((button) => button.text.includes('Назад')))
+        footer.push({ text: '⬅️ Назад', callback_data: 'menu:back' });
+      if (
+        !buttons.some(
+          (button) =>
+            'callback_data' in button && button.callback_data === 'menu:home',
+        )
+      )
+        footer.push({ text: '🏠 Меню', callback_data: 'menu:home' });
+      if (footer.length) rows.push(footer);
+      options = { ...options, reply_markup: { inline_keyboard: rows } };
+    }
+  }
   if (/^(?:❌|Не удалось|Дело изменилось)/.test(text))
     return ctx.reply(text, options);
   if (ctx.chat?.type !== 'private') return ctx.reply(text, options);

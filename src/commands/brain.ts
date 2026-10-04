@@ -23,6 +23,15 @@ interface Draft {
   saving: boolean;
 }
 const drafts = new Map<string, Draft>();
+export const cancelBrainDrafts = (ctx: BotContext) => {
+  for (const [id, draft] of drafts)
+    if (
+      draft.owner === ctx.from?.id &&
+      draft.chat === ctx.chat?.id &&
+      !draft.saving
+    )
+      drafts.delete(id);
+};
 
 export const brainCommand = async (ctx: BotContext) => {
   const input = extractArg(ctx.message?.text ?? '', Command.BRAIN).trim();
@@ -88,7 +97,7 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
           ? {
               reply_markup: new InlineKeyboard()
                 .text('✅ Сохранить', `brain_yes:${id}`)
-                .text('❌ Отмена', `brain_no:${id}`),
+                .text('⬅️ Назад', `brain_no:${id}`),
             }
           : {},
       );
@@ -126,7 +135,8 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
     if (ctx.match[1] === 'no') {
       drafts.delete(id);
-      await panelReply(ctx, 'Черновик отменён. Задачи не добавлены.');
+      const { showAddPrompt } = await import('./menu.js');
+      await showAddPrompt(ctx);
       return;
     }
     draft.saving = true;
