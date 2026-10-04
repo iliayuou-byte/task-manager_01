@@ -44,6 +44,7 @@ export enum Command {
   SETTIMEZONE = 'settimezone',
   MYTIMEZONE = 'mytimezone',
   TODAY = 'today',
+  NOW = 'now',
   LIST = 'list',
   ADD = 'add',
   COMPLETE = 'complete',
@@ -73,6 +74,10 @@ export const COMMANDS: Record<Command, CommandType> = {
   [Command.MYTIMEZONE]: {
     desc: 'show your current timezone',
     category: 'config',
+  },
+  [Command.NOW]: {
+    desc: 'choose the next task (optional: minutes available)',
+    category: 'info',
   },
   [Command.TODAY]: {
     desc: "show today's tasks",

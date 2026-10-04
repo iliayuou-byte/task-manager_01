@@ -9,6 +9,7 @@ import { clearCompletedCommand } from './commands/clearCompleted.js';
 import { completeCommand } from './commands/complete.js';
 import { editCommand } from './commands/edit.js';
 import { listCommand } from './commands/list.js';
+import { nowCommand } from './commands/now.js';
 import { removeCommand } from './commands/remove.js';
 import { searchCommand } from './commands/search.js';
 import { sortCommand } from './commands/sort.js';
@@ -69,6 +70,7 @@ opComposer.command(Command.CLEARCOMPLETED, clearCompletedCommand);
 opComposer.command(Command.SETTIMEZONE, setTimezoneCommand);
 opComposer.command(Command.MYTIMEZONE, myTimezoneCommand);
 opComposer.command(Command.TODAY, todayCommand);
+opComposer.command(Command.NOW, nowCommand);
 opComposer.command(Command.SORT, sortCommand);
 opComposer.command(Command.SEARCH, searchCommand);
 

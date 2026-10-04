@@ -178,3 +178,7 @@ Contributions welcome! Fork → Branch → Commit → PR.
 ## License
 
 [Business Source License 1.1](LICENSE)
+
+## Personal copilot
+
+See [COPILOT_SETUP.md](COPILOT_SETUP.md) for `/now` and local polling setup.
