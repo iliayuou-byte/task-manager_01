@@ -286,139 +286,141 @@ export const registerMenu = (composer: Composer<BotContext>) => {
     try {
       await ctx.answerCallbackQuery();
       ctx.session.awaitingAdd = undefined;
-      ctx.session.edit…3209 tokens truncated…3eизойдёт только после подтверждения.',
-  ]);
-  for (let index = 0; index < messages.length; index++) {
-    await ctx.reply(
-      messages[index],
-      index === messages.length - 1
-        ? {
-            reply_markup: new InlineKeyboard()
-              .text('🗑️ Удалить', `del_yes:${id}`)
-              .text('Отмена', `del_no:${id}`),
-          }
-        : {},
-    );
-  }
-};
-
-export const removeByNumbers = async (ctx: BotContext, input: string) => {
-  try {
-    if (ctx.chat?.type !== 'private')
-      return await ctx.reply('Удаляй по номерам в личном чате.');
-    const tasks = getNumberedTasks(ctx.from!.id, ctx.chat.id);
-    if (!tasks)
-      return await ctx.reply(
-        'Сначала открой /list или /today — номера относятся к последнему показанному списку.',
-      );
-    const numbers = parseTaskNumbers(input);
-    if (numbers.some((number) => number > tasks.length))
-      return await ctx.reply(
-        'Такого номера нет в последнем списке. Проверь /list.',
-      );
-    await previewRemoval(
-      ctx,
-      numbers.map((number) => tasks[number - 1]),
-    );
-  } catch (error) {
-    logAndReplyError(
-      ctx,
-      'REMOVE_NUMBERS',
-      error,
-      'Не удалось выбрать дела. Обнови /list и используй /remove 1 3.',
-    );
-  }
-};
-
-export const removeByVoice = async (ctx: BotContext, transcript: string) => {
-  try {
-    const { taskData } = await queryTasks();
-    const snapshot = getNumberedTasks(ctx.from!.id, ctx.chat!.id);
-    const tasks =
-      snapshot ??
-      numberedTasks([...taskData.uncompleted, ...taskData.completed]);
-    const selection = await generateVoiceRemoval(transcript, tasks);
-    if (selection.mode !== 'delete')
-      return await ctx.reply(
-        'Скажи отдельно, какие дела удалить, без добавления новых: «удали дело про продукты» или «удали первое и третье».',
-      );
-    if (selection.byNumber && !snapshot)
-      return await ctx.reply('Для удаления по номерам сначала открой /list.');
-    if (selection.numbers.some((number) => number > tasks.length))
-      return await ctx.reply(
-        'Не распознал номера. Обнови /list и попробуй ещё раз.',
-      );
-    await previewRemoval(
-      ctx,
-      selection.numbers.map((number) => tasks[number - 1]),
-    );
-  } catch (error) {
-    logAndReplyError(
-      ctx,
-      'REMOVE_VOICE',
-      error,
-      '❌ Не удалось разобрать удаление. Ничего не удалено. Можно использовать /remove 1 3 после /list.',
-    );
-  }
-};
-
-export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
-  composer.callbackQuery(/^del_(yes|no):(.+)$/, async (ctx) => {
-    const id = ctx.match[2];
-    const draft = pending.get(id);
-    if (
-      !draft ||
-      draft.owner !== ctx.from.id ||
-      draft.chat !== ctx.chat?.id ||
-      draft.expires < Date.now()
-    ) {
-      await ctx.answerCallbackQuery({
-        text: 'Подтверждение устарело. Выбери дела заново.',
-      });
-      return;
-    }
-    if (draft.saving) {
-      await ctx.answerCallbackQuery({ text: 'Уже удаляю…' });
-      return;
-    }
-    if (ctx.match[1] === 'yes') draft.saving = true;
-    await ctx.answerCallbackQuery();
-    if (ctx.match[1] === 'no') {
-      pending.delete(id);
-      await ctx.editMessageText('Отменено. Дела сохранены.');
-      return;
-    }
-    draft.saving = true;
-    try {
-      const { taskData, metadata } = await queryTasks();
-      const updated = removeSelectedTasks(taskData, draft.tasks);
-      if (!(await saveTasks(updated, metadata)))
-        throw new Error('Save not confirmed');
-      pending.delete(id);
-      await ctx.editMessageText(
-        `✅ Удалено дел: ${draft.tasks.length}.\nОткрой /list для новых номеров.`,
-      );
-      const ops = draft.tasks
-        .filter((task) => task.calendarEventId)
-        .map((task) => ({
-          type: 'remove' as const,
-          taskName: task.name,
-          calendarEventId: task.calendarEventId,
-        }));
-      if (ops.length)
-        await promptCalendarAction(
-          ctx,
-          'Удалить связанные события Google Calendar?',
-          ops,
+      ctx.session.editScene = undefined;
+      if (action === 'home') return await menuCommand(ctx);
+      if (action === 'settings') {
+        newState(ctx);
+        return await ctx.reply('⚙️ Настройки', {
+          reply_markup: settingsKeyboard(),
+        });
+      }
+      if (action === 'reminders') return await showReminders(ctx);
+      if (action === 'timezone') {
+        newState(ctx);
+        return await ctx.reply('🌍 Выбери часовой пояс:', {
+          reply_markup: new InlineKeyboard()
+            .text('Берлин / Мюнхен', 'menu:tz:Europe/Berlin')
+            .row()
+            .text('Клуж / Бухарест', 'menu:tz:Europe/Bucharest')
+            .row()
+            .text('Кишинёв', 'menu:tz:Europe/Chisinau')
+            .row()
+            .text('Назад', 'menu:settings'),
+        });
+      }
+      if (action === 'tz') {
+        if (
+          !['Europe/Berlin', 'Europe/Bucharest', 'Europe/Chisinau'].includes(id)
+        )
+          return;
+        await applyTimezone(ctx, id);
+        return await showReminders(ctx);
+      }
+      if (action === 'test') {
+        const { taskData, metadata } = await queryTasks();
+        const date = formatInTimeZone(
+          new Date(),
+          metadata.timezone || 'UTC',
+          'yyyy-MM-dd',
         );
+        const tasks = taskData.uncompleted.filter(
+          (task) => !task.completed && (!task.date || task.date <= date),
+        );
+        for (const message of splitMessages([
+          '🔔 Пробное напоминание',
+          '',
+          ...matrixLines(tasks),
+        ]))
+          await ctx.reply(message);
+        rememberTaskNumbers(ctx.from.id, ctx.chat.id, tasks);
+        return;
+      }
+      if (!state) return;
+      if (action === 'toggle')
+        return await writeTimes(
+          ctx,
+          state,
+          state.times?.length ? state.times : ['09:00', '19:00'],
+          !state.originalTimes || state.originalTimes === 'off',
+        );
+      if (action === 'deltime')
+        return await writeTimes(
+          ctx,
+          state,
+          (state.times ?? []).filter((_, index) => index !== Number(value)),
+        );
+      if (action === 'slot') {
+        state.id = randomUUID().slice(0, 8);
+        state.timeIndex = value === 'new' ? undefined : Number(value);
+        return await ctx.reply('Выбери час:', {
+          reply_markup: timeKeyboard(state.id),
+        });
+      }
+      if (action === 'hour')
+        return await ctx.reply('Выбери минуты:', {
+          reply_markup: timeKeyboard(state.id, value),
+        });
+      if (action === 'custom') {
+        state.input = 'time';
+        return await ctx.reply('Введи время: HH:MM, например 09:20.');
+      }
+      if (action === 'time')
+        return await saveSelectedTime(
+          ctx,
+          state,
+          `${value.slice(0, 2)}:${value.slice(2)}`,
+        );
+      if (action === 'page') return await showPicker(ctx, state, Number(value));
+      if (action === 'task') {
+        const task = state.tasks?.[Number(value)];
+        if (task) await card(ctx, state, task);
+        return;
+      }
+      if (action === 'importance') {
+        const keyboard = new InlineKeyboard();
+        QUADRANTS.forEach((title, index) => {
+          keyboard.text(title, `menu:q:${state.id}:${index + 1}`).row();
+        });
+        return await ctx.reply('Выбери раздел:', { reply_markup: keyboard });
+      }
+      const task = state.selected;
+      if (!task) return;
+      const { taskData, metadata } = await queryTasks();
+      const index = taskData.uncompleted.findIndex(
+        (live) => taskFingerprint(live) === taskFingerprint(task),
+      );
+      if (index < 0)
+        return await ctx.reply('Дело изменилось. Открой «📚 Все дела» заново.');
+      if (action === 'delete') return await previewRemoval(ctx, [task]);
+      if (action === 'edit') return await enterEditScene(ctx, index, task);
+      if (action === 'done') {
+        const live = taskData.uncompleted.splice(index, 1)[0];
+        markTaskCompleted(live, metadata.timezone);
+        taskData.completed.unshift(live);
+        await saveTasks(taskData, metadata);
+        newState(ctx);
+        return await ctx.reply(`✅ Готово: ${task.name}`, {
+          reply_markup: mainKeyboard(),
+        });
+      }
+      if (action === 'q' && /^[1-4]$/.test(value)) {
+        const updated = setQuadrant(taskData.uncompleted[index], Number(value));
+        taskData.uncompleted[index] = updated;
+        await saveTasks(taskData, metadata);
+        state.tasks = state.tasks?.map((item) =>
+          taskFingerprint(item) === taskFingerprint(task) ? updated : item,
+        );
+        await card(ctx, state, updated);
+      }
     } catch (error) {
-      draft.saving = false;
       logAndReplyError(
         ctx,
-        'REMOVE_CONFIRM',
+        'MENU',
         error,
-        '❌ Не удалось подтвердить удаление: список мог измениться. Проверь /list и выбери дела заново.',
+        'Не удалось выполнить действие. Открой меню заново.',
       );
+    } finally {
+      if (state) state.busy = false;
     }
   });
 };
