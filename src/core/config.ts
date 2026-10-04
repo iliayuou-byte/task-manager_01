@@ -45,6 +45,7 @@ export enum Command {
   MYTIMEZONE = 'mytimezone',
   TODAY = 'today',
   NOW = 'now',
+  BRAIN = 'brain',
   LIST = 'list',
   ADD = 'add',
   COMPLETE = 'complete',
@@ -74,6 +75,10 @@ export const COMMANDS: Record<Command, CommandType> = {
   [Command.MYTIMEZONE]: {
     desc: 'show your current timezone',
     category: 'config',
+  },
+  [Command.BRAIN]: {
+    desc: 'turn a brain dump into tasks for review',
+    category: 'task-operation',
   },
   [Command.NOW]: {
     desc: 'choose the next task (optional: minutes available)',

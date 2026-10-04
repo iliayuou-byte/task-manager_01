@@ -22,3 +22,7 @@ Keep keys in `.env` or a hosting service's secret settings; never commit them or
 ## Verification
 
 `bun run typecheck`, `bun run lint`, `bun test src/services/priorityEngine.test.ts`.
+
+## Brain dump
+
+Send `/brain study 40 minutes, buy groceries, check 1C tomorrow`. Review the proposed tasks, then press Save or Cancel. Drafts expire after 15 minutes or a bot restart; sending a new brain dump replaces the previous draft. Matching pending task names are skipped. Dates, durations and priorities are extracted only when stated. Calendar events are not created by this command. Use the command in a private chat.

@@ -5,6 +5,7 @@ import { registerSortAction } from './actions/sort.js';
 import { registerTaskPickerAction } from './actions/taskPicker.js';
 import { aboutCommand } from './commands/about.js';
 import { addCommand, addSceneComposer } from './commands/add.js';
+import { brainCommand, registerBrainActions } from './commands/brain.js';
 import { clearCompletedCommand } from './commands/clearCompleted.js';
 import { completeCommand } from './commands/complete.js';
 import { editCommand } from './commands/edit.js';
@@ -71,6 +72,8 @@ opComposer.command(Command.SETTIMEZONE, setTimezoneCommand);
 opComposer.command(Command.MYTIMEZONE, myTimezoneCommand);
 opComposer.command(Command.TODAY, todayCommand);
 opComposer.command(Command.NOW, nowCommand);
+opComposer.command(Command.BRAIN, brainCommand);
+registerBrainActions(opComposer);
 opComposer.command(Command.SORT, sortCommand);
 opComposer.command(Command.SEARCH, searchCommand);
 
