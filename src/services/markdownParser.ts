@@ -73,7 +73,11 @@ export const parseMarkdown = (content: string): ParseResult => {
       const match = line.match(FRONTMATTER_KEY_VALUE_PATTERN);
       if (match) {
         const [, key, value] = match;
-        if (key === 'reminder_times' || key === 'reminder_last_sent') {
+        if (
+          key === 'reminder_times' ||
+          key === 'reminder_last_sent' ||
+          key === 'reminder_saved_times'
+        ) {
           metadata[key] = value;
         } else if (key === 'last_synced') {
           metadata.last_synced = value;
@@ -248,6 +252,8 @@ export const serializeTaskMarkdown = (
   const lines: string[] = [];
 
   lines.push('---');
+  if (metadata.reminder_saved_times)
+    lines.push(`reminder_saved_times: ${metadata.reminder_saved_times}`);
   if (metadata.reminder_times)
     lines.push(`reminder_times: ${metadata.reminder_times}`);
   if (metadata.reminder_last_sent)

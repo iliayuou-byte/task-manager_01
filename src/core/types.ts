@@ -46,6 +46,7 @@ export interface Metadata {
   table_header?: string;
   timezone?: string;
   reminder_times?: string;
+  reminder_saved_times?: string;
   reminder_last_sent?: string;
 }
 

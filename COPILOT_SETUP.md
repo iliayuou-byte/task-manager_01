@@ -46,3 +46,11 @@ Polling checks each minute while the process is running. A saved slot prevents o
 After `/list` or `/today`, use `/remove 1 3` or plain `удали 1, 3`. Numbers refer to the last displayed saved-task list, including reminder digests, and follow quadrant order. They are display numbers, not persistent IDs. After a restart, open `/list` again. Brain previews are not saved-task lists.
 
 Voice examples: “удали первое и третье дело” or “удали дело про продукты”. Explicit deletion phrases route to selection instead of addition. The AI matches references against the task list; ambiguous or mixed add/delete requests ask for clarification. Every numeric or voice deletion shows selected names with Delete/Cancel buttons before writing storage. Confirmation expires in 15 minutes. A changed/completed/missing task invalidates the selection instead of deleting a different task. Calendar events require their own follow-up confirmation.
+
+## Управление кнопками
+
+Отправь `/menu` или `/start`, чтобы открыть постоянную клавиатуру: сегодня, все дела, добавить, что сейчас, выполнено, удалить и настройки. Добавление принимает текст или ГС и показывает подтверждение. В списке выбери дело: доступны выполнение, редактирование, четыре раздела Эйзенхауэра и удаление с подтверждением. Старые команды продолжают работать.
+
+В «Настройки → Напоминания» включай и выключай отправку, меняй время, добавляй до четырёх времён, удаляй отдельное время или отправляй пробное напоминание. Час выбирается кнопкой, минуты — 00/15/30/45; для другого времени есть ввод HH:MM. Расписание сохраняется при выключении. Часовой пояс выбирается в настройках; другие зоны доступны через `/settimezone`. Напоминания требуют запущенного бота и бодрствующего Mac с интернетом.
+
+Кнопки выбора дел и расписания действуют 30 минут и привязаны к текущему экрану. После перезапуска открой меню заново. Номера дел соответствуют последнему показанному списку.

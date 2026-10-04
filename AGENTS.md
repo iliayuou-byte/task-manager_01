@@ -136,3 +136,7 @@ src/
 - GitHub task tables append Important/Urgent columns without changing earlier column positions. Notion does not yet store these additions.
 
 - `services/taskNumbers.ts` stores user/chat-scoped snapshots of displayed saved-task lists; `commands/removeSelected.ts` handles confirmed numeric and voice deletion, rejecting stale fingerprints. IDs in list output are display indices only.
+
+### Button menu
+
+`commands/menu.ts` routes persistent keyboard and inline task/settings actions before add/edit scenes, behind allowlist. `views/menuView.ts` owns keyboard layouts. Menu snapshots expire after 30 minutes; task mutation verifies fingerprints. `reminder_saved_times` preserves schedules while reminders are off. `/menu` and `/start` reset pending menu input and scenes.

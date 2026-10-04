@@ -6,6 +6,7 @@ import type { EditableField, Priority, Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
+import { taskFingerprint } from '../services/taskNumbers.js';
 import {
   escapeMarkdownV2,
   findTaskIdxByName,
@@ -54,8 +55,16 @@ const generateEditKeyboard = (task: Task) => {
 
 export const editSceneComposer = new Composer<BotContext>();
 
-export const enterEditScene = async (ctx: BotContext, taskIdx: number) => {
+export const enterEditScene = async (
+  ctx: BotContext,
+  taskIdx: number,
+  expected?: Task,
+) => {
   const { taskData } = await queryTasks();
+  if (expected)
+    taskIdx = taskData.uncompleted.findIndex(
+      (task) => taskFingerprint(task) === taskFingerprint(expected),
+    );
   const task = taskData.uncompleted[taskIdx];
 
   if (!task) {
@@ -63,7 +72,11 @@ export const enterEditScene = async (ctx: BotContext, taskIdx: number) => {
     return;
   }
 
-  ctx.session.editScene = { active: true, taskIdx };
+  ctx.session.editScene = {
+    active: true,
+    taskIdx,
+    fingerprint: taskFingerprint(task),
+  };
 
   await ctx.reply(
     `Select a field to edit for *${escapeMarkdownV2(task.name)}*:`,
@@ -123,7 +136,12 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       return;
     }
 
-    const oldTask = taskData.uncompleted[state.taskIdx];
+    const taskIdx = state.fingerprint
+      ? taskData.uncompleted.findIndex(
+          (task) => taskFingerprint(task) === state.fingerprint,
+        )
+      : state.taskIdx;
+    const oldTask = taskData.uncompleted[taskIdx];
     if (!oldTask) {
       await ctx.reply('❌ Task not found.');
       ctx.session.editScene = undefined;
@@ -157,7 +175,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       updatedTask = { ...updatedTask, ...generatedTask };
     }
 
-    taskData.uncompleted[state.taskIdx] = updatedTask;
+    taskData.uncompleted[taskIdx] = updatedTask;
     await saveTasks(taskData, metadata);
 
     await ctx.reply(

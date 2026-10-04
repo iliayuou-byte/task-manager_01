@@ -5,10 +5,12 @@ import { queryTasks } from '../services/queryTasks.js';
 import { extractArg, logAndReplyError } from '../utils/index.js';
 import { getCopilotMessage } from '../views/copilotView.js';
 
-export const nowCommand = async (ctx: BotContext) => {
+export const nowCommand = async (ctx: BotContext) =>
+  showNow(ctx, extractArg(ctx.message?.text ?? '', Command.NOW).trim());
+
+export const showNow = async (ctx: BotContext, arg = '') => {
   try {
     ctx.chatAction = 'typing';
-    const arg = extractArg(ctx.message?.text ?? '', Command.NOW).trim();
     if (arg && (!/^\d+$/.test(arg) || Number(arg) < 1 || Number(arg) > 1440)) {
       return await ctx.reply(
         'Используй /now или /now 30 — доступные минуты от 1 до 1440.',

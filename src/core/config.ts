@@ -47,6 +47,8 @@ export enum Command {
   MYTIMEZONE = 'mytimezone',
   TODAY = 'today',
   NOW = 'now',
+  START = 'start',
+  MENU = 'menu',
   BRAIN = 'brain',
   QUADRANT = 'quadrant',
   REMINDERS = 'reminders',
@@ -88,6 +90,8 @@ export const COMMANDS: Record<Command, CommandType> = {
     desc: 'reminders: /reminders 09:00 19:00 or off',
     category: 'config',
   },
+  [Command.START]: { desc: 'open the main menu', category: 'info' },
+  [Command.MENU]: { desc: 'open the main menu', category: 'info' },
   [Command.BRAIN]: {
     desc: 'turn a brain dump into tasks for review',
     category: 'task-operation',

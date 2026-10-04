@@ -23,6 +23,9 @@ export const remindersCommand = async (ctx: BotContext) => {
         'Укажи до четырёх времён: /reminders 09:00 19:00 либо /reminders off',
       );
     }
+    if (times.length) metadata.reminder_saved_times = times.join(',');
+    else if (metadata.reminder_times && metadata.reminder_times !== 'off')
+      metadata.reminder_saved_times = metadata.reminder_times;
     metadata.reminder_times = times.length ? times.join(',') : 'off';
     await saveTasks(taskData, metadata);
     await ctx.reply(

@@ -25,7 +25,7 @@ const pending = new Map<
   }
 >();
 
-const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
+export const previewRemoval = async (ctx: BotContext, tasks: Task[]) => {
   if (!tasks.length)
     return await ctx.reply(
       'Не нашёл однозначно выбранных задач. Используй /list, затем /remove 1 3.',

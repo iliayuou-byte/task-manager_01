@@ -10,6 +10,7 @@ import { clearCompletedCommand } from './commands/clearCompleted.js';
 import { completeCommand } from './commands/complete.js';
 import { editCommand } from './commands/edit.js';
 import { listCommand } from './commands/list.js';
+import { menuCommand, registerMenu } from './commands/menu.js';
 import { nowCommand } from './commands/now.js';
 import { quadrantCommand } from './commands/quadrant.js';
 import { remindersCommand } from './commands/reminders.js';
@@ -34,6 +35,7 @@ import { allowlist } from './middlewares/allowlist.js';
 import { type BotContext, sessionMiddleware } from './middlewares/session.js';
 import { editSceneComposer, enterEditScene } from './scenes/editTaskScene.js';
 import { START_WORDING } from './views/generalView.js';
+import { mainKeyboard } from './views/menuView.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -64,10 +66,12 @@ infoComposer.command(Command.WHATSNEW, whatsnewCommand);
 
 export const opComposer = new Composer<BotContext>();
 
-// Scene composers must be mounted before commands for session isolation
+opComposer.use(allowlist);
+opComposer.command(Command.START, menuCommand);
+opComposer.command(Command.MENU, menuCommand);
+registerMenu(opComposer);
 opComposer.use(addSceneComposer);
 opComposer.use(editSceneComposer);
-opComposer.use(allowlist);
 
 opComposer.command(Command.ADD, addCommand);
 opComposer.command(Command.LIST, listCommand);
@@ -114,13 +118,17 @@ opComposer.callbackQuery(/^tz_(.+)$/, async (ctx) => {
 bot.use(infoComposer, opComposer);
 
 bot.on('message:text', (ctx) => {
-  ctx.reply(START_WORDING, { parse_mode: 'MarkdownV2' }).catch((error) => {
-    logger.errorWithContext({
-      userId: ctx.from?.id,
-      op: 'BOT_REPLY',
-      error,
+  ctx
+    .reply('Выбери действие кнопками или отправь ГС с делами.', {
+      reply_markup: mainKeyboard(),
+    })
+    .catch((error) => {
+      logger.errorWithContext({
+        userId: ctx.from?.id,
+        op: 'BOT_REPLY',
+        error,
+      });
     });
-  });
 });
 
 logger.debugWithContext({ message: START_WORDING });

@@ -41,12 +41,14 @@ test('new fields and reminder state survive markdown storage', () => {
     serializeTaskMarkdown(data, {
       timezone: 'Europe/Berlin',
       reminder_times: '09:00,19:00',
+      reminder_saved_times: '09:00,19:00',
       reminder_last_sent: '2026-10-05T09:00',
     }),
   );
   expect(getQuadrant(parsed.taskData.uncompleted[0])).toBe(3);
   expect(parsed.metadata.reminder_last_sent).toBe('2026-10-05T09:00');
   expect(parsed.metadata.reminder_times).toBe('09:00,19:00');
+  expect(parsed.metadata.reminder_saved_times).toBe('09:00,19:00');
 });
 
 test('old twelve-column task rows remain readable', () => {
