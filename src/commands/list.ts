@@ -2,6 +2,7 @@ import { Command } from '../core/config.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { queryTasks } from '../services/queryTasks.js';
+import { rememberTaskNumbers } from '../services/taskNumbers.js';
 import { extractArg, logAndReplyError, parseTags } from '../utils/index.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { NO_TASK_MESSAGE } from '../views/generalView.js';
@@ -55,6 +56,8 @@ export const listCommand = async (ctx: BotContext) => {
     ])) {
       await ctx.reply(message);
     }
+    if (ctx.from && ctx.chat)
+      rememberTaskNumbers(ctx.from.id, ctx.chat.id, tasksToDisplay);
   } catch (error) {
     logAndReplyError(ctx, Command.LIST, error, '❌ Error fetching tasks.');
   }

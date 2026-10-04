@@ -14,6 +14,10 @@ import { nowCommand } from './commands/now.js';
 import { quadrantCommand } from './commands/quadrant.js';
 import { remindersCommand } from './commands/reminders.js';
 import { removeCommand } from './commands/remove.js';
+import {
+  registerSelectedRemoval,
+  removeByNumbers,
+} from './commands/removeSelected.js';
 import { searchCommand } from './commands/search.js';
 import { sortCommand } from './commands/sort.js';
 import {
@@ -79,7 +83,15 @@ opComposer.command(Command.BRAIN, brainCommand);
 opComposer.command(Command.QUADRANT, quadrantCommand);
 opComposer.command(Command.REMINDERS, remindersCommand);
 registerBrainActions(opComposer);
+registerSelectedRemoval(opComposer);
 opComposer.on('message:voice', voiceMessage);
+opComposer.on('message:text', async (ctx, next) => {
+  const match = ctx.message.text
+    .trim()
+    .match(/^(?:удали|убери|remove|delete)\s+(\d+(?:[\s,]+\d+)*)[.!]?$/i);
+  if (match) return await removeByNumbers(ctx, match[1]);
+  return next();
+});
 opComposer.command(Command.SORT, sortCommand);
 opComposer.command(Command.SEARCH, searchCommand);
 

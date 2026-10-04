@@ -134,3 +134,5 @@ src/
 - `commands/quadrant.ts` allows explicit quadrant overrides by exact task name.
 - `services/reminders.ts` sends configured daily digests; `commands/reminders.ts` controls times. Polling runs a minute timer; webhook mode requires a frequent external cron. Settings and last-sent slot use GitHub Markdown frontmatter.
 - GitHub task tables append Important/Urgent columns without changing earlier column positions. Notion does not yet store these additions.
+
+- `services/taskNumbers.ts` stores user/chat-scoped snapshots of displayed saved-task lists; `commands/removeSelected.ts` handles confirmed numeric and voice deletion, rejecting stale fingerprints. IDs in list output are display indices only.

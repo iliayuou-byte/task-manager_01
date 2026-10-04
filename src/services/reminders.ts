@@ -6,6 +6,7 @@ import type { BotContext } from '../middlewares/session.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
+import { rememberTaskNumbers } from './taskNumbers.js';
 
 export const parseReminderTimes = (input: string): string[] => {
   if (input === 'off') return [];
@@ -79,6 +80,7 @@ export const checkReminders = async (
         ];
     for (const message of splitMessages(lines))
       await bot.api.sendMessage(ALLOWED_USERS[0], message);
+    rememberTaskNumbers(ALLOWED_USERS[0], ALLOWED_USERS[0], tasks);
     // Re-read after network sends so task changes during delivery are preserved.
     const latest = await queryTasks();
     latest.metadata.reminder_last_sent = slot;

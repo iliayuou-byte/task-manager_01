@@ -40,3 +40,9 @@ With GitHub storage, Important and Urgent columns are appended on the next save.
 Enable Telegram list reminders with `/reminders 09:00 19:00` in your stored timezone. `/reminders` shows settings, `/reminders off` disables them. Up to four daily times. Reminders include undated tasks and tasks planned for today or earlier, excluding completed tasks. They are daily digests, not individual deadline alarms. They go to the first allowlisted user (single-owner bot).
 
 Polling checks each minute while the process is running. A saved slot prevents ordinary duplicates across restarts; a ten-minute grace window handles short outages. Sleep/offline periods beyond that window are not replayed. Telegram delivery followed by a storage failure may result in a repeat message. For webhook hosting, the cron endpoint needs an external scheduler running every minute; the original daily cron alone is insufficient. Reminder times and last-sent state are stored in task-file frontmatter.
+
+## Delete by numbers or voice
+
+After `/list` or `/today`, use `/remove 1 3` or plain `удали 1, 3`. Numbers refer to the last displayed saved-task list, including reminder digests, and follow quadrant order. They are display numbers, not persistent IDs. After a restart, open `/list` again. Brain previews are not saved-task lists.
+
+Voice examples: “удали первое и третье дело” or “удали дело про продукты”. Explicit deletion phrases route to selection instead of addition. The AI matches references against the task list; ambiguous or mixed add/delete requests ask for clarification. Every numeric or voice deletion shows selected names with Delete/Cancel buttons before writing storage. Confirmation expires in 15 minutes. A changed/completed/missing task invalidates the selection instead of deleting a different task. Calendar events require their own follow-up confirmation.

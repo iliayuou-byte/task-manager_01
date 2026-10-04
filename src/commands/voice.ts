@@ -7,6 +7,7 @@ import {
   readVoiceBytes,
 } from '../services/voiceDownload.js';
 import { processBrainInput } from './brain.js';
+import { removeByVoice } from './removeSelected.js';
 
 export const voiceMessage = async (ctx: BotContext) => {
   if (ctx.chat?.type !== 'private') {
@@ -54,7 +55,11 @@ export const voiceMessage = async (ctx: BotContext) => {
         `📝 Расшифровка:\n${transcript.slice(offset, offset + 3000)}`,
       );
     }
-    await processBrainInput(ctx, transcript);
+    if (/(удал|убер|убра|исключ|delete|remove)/i.test(transcript)) {
+      await removeByVoice(ctx, transcript);
+    } else {
+      await processBrainInput(ctx, transcript);
+    }
   } catch {
     // Download errors can contain a Telegram token in their URL: never log them.
     logger.warnWithContext({

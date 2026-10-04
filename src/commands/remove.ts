@@ -16,6 +16,7 @@ import {
   NO_TASK_MESSAGE,
   TASK_NOT_FOUND_MESSAGE,
 } from '../views/generalView.js';
+import { removeByNumbers } from './removeSelected.js';
 
 export const removeCommand = async (ctx: BotContext) => {
   if (!ctx.message || !('text' in ctx.message)) {
@@ -26,6 +27,9 @@ export const removeCommand = async (ctx: BotContext) => {
     ctx.chatAction = 'typing';
     const text = ctx.message.text!;
     const arg = extractArg(text, Command.REMOVE);
+
+    if (/^\d+(?:[\s,]+\d+)*$/.test(arg.trim()))
+      return await removeByNumbers(ctx, arg.trim());
 
     if (!arg) {
       const { taskData } = await queryTasks();

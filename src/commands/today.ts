@@ -2,6 +2,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
 import { queryTasks } from '../services/queryTasks.js';
+import { rememberTaskNumbers } from '../services/taskNumbers.js';
 import { logAndReplyError } from '../utils/index.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 
@@ -33,6 +34,8 @@ export const todayCommand = async (ctx: BotContext) => {
     ])) {
       await ctx.reply(message);
     }
+    if (ctx.from && ctx.chat)
+      rememberTaskNumbers(ctx.from.id, ctx.chat.id, todaysTasks);
   } catch (error) {
     logAndReplyError(
       ctx,
