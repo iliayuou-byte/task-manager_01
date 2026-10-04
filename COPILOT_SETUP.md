@@ -26,3 +26,7 @@ Keep keys in `.env` or a hosting service's secret settings; never commit them or
 ## Brain dump
 
 Send `/brain study 40 minutes, buy groceries, check 1C tomorrow`. Review the proposed tasks, then press Save or Cancel. Drafts expire after 15 minutes or a bot restart; sending a new brain dump replaces the previous draft. Matching pending task names are skipped. Dates, durations and priorities are extracted only when stated. Calendar events are not created by this command. Use the command in a private chat.
+
+## Voice task entry
+
+Send a Telegram voice message directly in the private bot chat. With `AI_PROVIDER=gemini`, the existing model/key transcribes the audio, displays the transcript, and opens the same task draft with Save/Cancel. No tasks are saved until confirmation. Limit: 3 minutes and 8 MiB. Audio is downloaded into memory and sent to the configured Gemini API; no audio file is written locally. The transcript appears in the Telegram chat. Check names and dates before saving. Other providers currently require text `/brain`.

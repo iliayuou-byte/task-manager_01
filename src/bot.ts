@@ -20,6 +20,7 @@ import {
   setTimezoneCommand,
 } from './commands/timezone.js';
 import { todayCommand } from './commands/today.js';
+import { voiceMessage } from './commands/voice.js';
 import { whatsnewCommand } from './commands/whatsnew.js';
 import { Command, IS_PROD } from './core/config.js';
 import logger from './core/logger.js';
@@ -74,6 +75,7 @@ opComposer.command(Command.TODAY, todayCommand);
 opComposer.command(Command.NOW, nowCommand);
 opComposer.command(Command.BRAIN, brainCommand);
 registerBrainActions(opComposer);
+opComposer.on('message:voice', voiceMessage);
 opComposer.command(Command.SORT, sortCommand);
 opComposer.command(Command.SEARCH, searchCommand);
 

@@ -19,11 +19,15 @@ interface Draft {
 const drafts = new Map<string, Draft>();
 
 export const brainCommand = async (ctx: BotContext) => {
+  const input = extractArg(ctx.message?.text ?? '', Command.BRAIN).trim();
+  return processBrainInput(ctx, input);
+};
+
+export const processBrainInput = async (ctx: BotContext, input: string) => {
   try {
     if (ctx.chat?.type !== 'private') {
       return await ctx.reply('Используй /brain в личном чате с ботом.');
     }
-    const input = extractArg(ctx.message?.text ?? '', Command.BRAIN).trim();
     if (!input) {
       return await ctx.reply(
         '/brain надо сопромат 40 минут, купить продукты, завтра проверить 1С',
