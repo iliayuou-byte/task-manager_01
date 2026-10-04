@@ -27,6 +27,7 @@ export const COL_IDX = {
   RECURRENCE_RULE: getColIdx('recurrenceRule'),
   IMPORTANT: getColIdx('important'),
   URGENT: getColIdx('urgent'),
+  LOCKED: getColIdx('priorityLocked'),
 };
 
 export interface ParseResult {
@@ -79,6 +80,15 @@ export const parseMarkdown = (content: string): ParseResult => {
           key === 'reminder_saved_times'
         ) {
           metadata[key] = value;
+        } else if (key === 'ai_auto_priority') {
+          metadata.ai_auto_priority = value;
+        } else if (key === 'ai_priority_rules') {
+          try {
+            const rules: unknown = JSON.parse(value);
+            if (typeof rules === 'string') metadata.ai_priority_rules = rules;
+          } catch {
+            metadata.ai_priority_rules = value;
+          }
         } else if (key === 'last_synced') {
           metadata.last_synced = value;
         } else if (key === 'total_tasks') {
@@ -158,6 +168,10 @@ export const parseMarkdown = (content: string): ParseResult => {
 
           const task: Task = {
             completed,
+            priorityLocked:
+              getCell(cells, COL_IDX.LOCKED) === undefined
+                ? undefined
+                : cells[COL_IDX.LOCKED] === 'true',
             important:
               getCell(cells, COL_IDX.IMPORTANT) === undefined
                 ? undefined
@@ -252,6 +266,12 @@ export const serializeTaskMarkdown = (
   const lines: string[] = [];
 
   lines.push('---');
+  if (metadata.ai_auto_priority)
+    lines.push(`ai_auto_priority: ${metadata.ai_auto_priority}`);
+  if (metadata.ai_priority_rules)
+    lines.push(
+      `ai_priority_rules: ${JSON.stringify(metadata.ai_priority_rules)}`,
+    );
   if (metadata.reminder_saved_times)
     lines.push(`reminder_saved_times: ${metadata.reminder_saved_times}`);
   if (metadata.reminder_times)

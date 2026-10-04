@@ -27,6 +27,7 @@ export const TABLE_COLUMNS: ReadonlyArray<{
   { key: 'recurrenceRule', header: 'RecurrenceRule' },
   { key: 'important', header: 'Important' },
   { key: 'urgent', header: 'Urgent' },
+  { key: 'priorityLocked', header: 'PriorityLocked' },
 ] as const;
 
 export const getInitialContent = (date: Date) => `---

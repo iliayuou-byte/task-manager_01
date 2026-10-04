@@ -70,7 +70,7 @@ const processAdd = async (ctx: BotContext, input: string) => {
 
     let task: Task;
     try {
-      task = await processNewTask(input, metadata.timezone);
+      task = await processNewTask(input, metadata.timezone, metadata);
     } catch (error) {
       return ctx.reply(
         `❌ ${error instanceof Error ? error.message : 'Failed to add task due to an unknown error.'}`,
@@ -146,8 +146,9 @@ const getUniqueTaskName = (taskName: string, tasks: Task[]): string => {
 const processNewTask = async (
   userText: string,
   timezone: string,
+  preferences: import('../core/types.js').Metadata,
 ): Promise<Task> => {
   const { tags, text } = parseUserText(userText);
-  const task = await generateAiTask(text, tags, timezone);
+  const task = await generateAiTask(text, tags, timezone, preferences);
   return { completed: false, ...task, tags };
 };

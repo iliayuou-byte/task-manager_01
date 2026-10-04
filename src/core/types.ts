@@ -15,6 +15,7 @@ export interface Task {
   // formatted as "HH:MM"
   duration?: string;
   priority?: Priority;
+  priorityLocked?: boolean;
   important?: boolean;
   urgent?: boolean;
   tags: string[];
@@ -36,7 +37,7 @@ export type Field = keyof Task;
 
 export type EditableField = Exclude<
   Field,
-  'completed' | 'calendarEventId' | 'important' | 'urgent'
+  'completed' | 'calendarEventId' | 'important' | 'urgent' | 'priorityLocked'
 >;
 
 export interface Metadata {
@@ -45,6 +46,8 @@ export interface Metadata {
   tags?: string[];
   table_header?: string;
   timezone?: string;
+  ai_auto_priority?: string;
+  ai_priority_rules?: string;
   reminder_times?: string;
   reminder_saved_times?: string;
   reminder_last_sent?: string;

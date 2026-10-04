@@ -31,6 +31,8 @@ export const settingsKeyboard = () =>
   new InlineKeyboard()
     .text('🔔 Напоминания', 'menu:reminders')
     .row()
+    .text('🧠 Приоритеты ИИ', 'ai:open')
+    .row()
     .text('🌍 Часовой пояс', 'menu:timezone')
     .row()
     .text('🏠 Главное меню', 'menu:home');

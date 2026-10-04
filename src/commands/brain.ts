@@ -41,7 +41,7 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
     if (!metadata.timezone)
       return await ctx.reply('Сначала /settimezone Europe/Berlin');
     const tasks = uniqueBrainTasks(
-      await generateBrainTasks(input, metadata.timezone),
+      await generateBrainTasks(input, metadata.timezone, metadata),
       taskData.uncompleted,
     );
     if (!tasks.length)

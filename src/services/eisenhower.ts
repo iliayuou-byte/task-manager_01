@@ -15,6 +15,7 @@ export const getQuadrant = (task: Task): number => {
 
 export const setQuadrant = (task: Task, quadrant: number): Task => ({
   ...task,
+  priorityLocked: true,
   important: quadrant === 1 || quadrant === 2,
   urgent: quadrant === 1 || quadrant === 3,
 });

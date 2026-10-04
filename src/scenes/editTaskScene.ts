@@ -171,8 +171,15 @@ editSceneComposer.on('message:text', async (ctx, next) => {
         newValue,
         updatedTask.tags,
         metadata.timezone,
+        metadata,
       );
-      updatedTask = { ...updatedTask, ...generatedTask };
+      updatedTask = {
+        ...updatedTask,
+        ...generatedTask,
+        ...(oldTask.priorityLocked
+          ? { important: oldTask.important, urgent: oldTask.urgent }
+          : {}),
+      };
     }
 
     taskData.uncompleted[taskIdx] = updatedTask;

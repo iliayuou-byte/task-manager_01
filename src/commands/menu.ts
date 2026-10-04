@@ -50,6 +50,11 @@ const newState = (ctx: BotContext): MenuState => {
   return state;
 };
 
+export const clearMenuInput = (ctx: BotContext) => {
+  const state = ctx.from && states.get(ctx.from.id);
+  if (state) state.input = undefined;
+};
+
 export const menuCommand = async (ctx: BotContext) => {
   newState(ctx);
   ctx.session.awaitingAdd = undefined;
@@ -196,6 +201,13 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
     .row()
     .text('↔️ Важность', `menu:importance:${state.id}`)
     .text('🗑 Удалить', `menu:delete:${state.id}`)
+    .row()
+    .text(
+      task.priorityLocked
+        ? '🧠 Разрешить ИИ менять раздел'
+        : '🔒 Закрепить раздел',
+      `menu:lock:${state.id}`,
+    )
     .row()
     .text('🏠 Меню', 'menu:home');
   await ctx.reply(`${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}`, {
@@ -402,6 +414,16 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         return await ctx.reply(`✅ Готово: ${task.name}`, {
           reply_markup: mainKeyboard(),
         });
+      }
+      if (action === 'lock') {
+        const updated = {
+          ...taskData.uncompleted[index],
+          priorityLocked: !task.priorityLocked,
+        };
+        taskData.uncompleted[index] = updated;
+        if (!(await saveTasks(taskData, metadata)))
+          throw new Error('Save not confirmed');
+        return await card(ctx, state, updated);
       }
       if (action === 'q' && /^[1-4]$/.test(value)) {
         const updated = setQuadrant(taskData.uncompleted[index], Number(value));

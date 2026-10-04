@@ -140,3 +140,7 @@ src/
 ### Button menu
 
 `commands/menu.ts` routes persistent keyboard and inline task/settings actions before add/edit scenes, behind allowlist. `views/menuView.ts` owns keyboard layouts. Menu snapshots expire after 30 minutes; task mutation verifies fingerprints. `reminder_saved_times` preserves schedules while reminders are off. `/menu` and `/start` reset pending menu input and scenes.
+
+### AI priority preferences
+
+`commands/aiSettings.ts` manages private-chat preferences and confirmed reclassification. `services/aiPriorities.ts` builds priority-only personal instructions and validates immutable task proposals. `ai_auto_priority` and JSON-encoded `ai_priority_rules` persist in Markdown frontmatter. Task `priorityLocked` column protects manual quadrant choices; new columns append to maintain legacy row compatibility. `/add`, `/brain` and name editing pass metadata into AI generation. Register AI settings before menu/scenes so rule entry and cancellation route correctly.

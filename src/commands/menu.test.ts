@@ -1,9 +1,11 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { Bot } from 'grammy';
+import * as aiClient from '../clients/ai.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
+import { registerAiSettings } from './aiSettings.js';
 import { registerMenu } from './menu.js';
 
 const spies: Array<{ mockRestore(): void }> = [];
@@ -70,6 +72,7 @@ const fixture = (user: number) => {
     ctx.session = {};
     await next();
   });
+  registerAiSettings(bot);
   registerMenu(bot);
   const from = { id: user, is_bot: false, first_name: 'User' };
   const message = {
@@ -154,4 +157,52 @@ test('now button does not parse its label as a minutes argument; timezone button
   await f.click('menu:timezone');
   await f.click(f.button('Кишинёв'));
   expect(f.data().metadata.timezone).toBe('Europe/Chisinau');
+});
+
+test('AI settings save multiline rules, toggle auto and cancel rule entry', async () => {
+  const f = fixture(504);
+  await f.click('ai:open');
+  await f.click(f.button('Мои правила'));
+  await f.text('Учёба важна.\nСрочно только при дедлайне.');
+  expect(f.data().metadata.ai_priority_rules).toBe(
+    'Учёба важна.\nСрочно только при дедлайне.',
+  );
+  await f.click(f.button('Выключить автораспределение'));
+  expect(f.data().metadata.ai_auto_priority).toBe('off');
+  await f.click(f.button('Мои правила'));
+  await f.click('menu:settings');
+  await f.text('Не сохранять это как правила');
+  expect(f.data().metadata.ai_priority_rules).toBe(
+    'Учёба важна.\nСрочно только при дедлайне.',
+  );
+});
+
+test('manual importance locks a task and the card can unlock it', async () => {
+  const f = fixture(505);
+  await f.text(MENU.all);
+  await f.click(f.button('1. Первое'));
+  await f.click(f.button('Важность'));
+  await f.click(f.button('Не важно и не срочно'));
+  expect(f.data().taskData.uncompleted[0].priorityLocked).toBe(true);
+  await f.click(f.button('Разрешить ИИ'));
+  expect(f.data().taskData.uncompleted[0].priorityLocked).toBe(false);
+});
+
+test('existing task classification previews before saving and skips manual locks', async () => {
+  const f = fixture(506);
+  f.data().taskData.uncompleted[1].priorityLocked = true;
+  const classification = spyOn(
+    aiClient,
+    'classifyTaskPriorities',
+  ).mockImplementation(async (tasks) =>
+    tasks.map((task) => ({ task, quadrant: 4, reason: 'Бытовая мелочь' })),
+  );
+  spies.push(classification);
+  await f.click('ai:open');
+  await f.click(f.button('Разобрать текущие дела'));
+  expect(classification.mock.calls[0][0]).toHaveLength(1);
+  expect(f.data().taskData.uncompleted[0].important).toBeUndefined();
+  await f.click(f.button('Сохранить'));
+  expect(f.data().taskData.uncompleted[0].important).toBe(false);
+  expect(f.data().taskData.uncompleted[1].priorityLocked).toBe(true);
 });
