@@ -39,6 +39,10 @@ import { editSceneComposer, enterEditScene } from './scenes/editTaskScene.js';
 import { panelReply } from './services/chatPanel.js';
 import { registerContextKeyboard } from './services/contextKeyboard.js';
 import { registerPendingInputs } from './services/pendingInputs.js';
+import {
+  usageStatsCommand,
+  usageStatsMiddleware,
+} from './services/usageStats.js';
 import { profileOwner, runForUser } from './services/userScope.js';
 import { START_WORDING } from './views/generalView.js';
 import { mainKeyboard } from './views/menuView.js';
@@ -92,6 +96,8 @@ opComposer.use(async (ctx, next) => {
     ctx.session.assistant = undefined;
   return next();
 });
+opComposer.use(usageStatsMiddleware());
+opComposer.command('stats', (ctx) => usageStatsCommand(ctx));
 registerContextKeyboard(opComposer);
 opComposer.command(Command.START, menuCommand);
 opComposer.command(Command.MENU, menuCommand);

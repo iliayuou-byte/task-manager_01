@@ -6,6 +6,7 @@ import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
 import { rememberTaskNumbers } from './taskNumbers.js';
+import { pruneUsageStats } from './usageStats.js';
 import { profileUsers, runForUser } from './userScope.js';
 
 export const parseReminderTimes = (input: string): string[] => {
@@ -90,6 +91,7 @@ export const checkReminders = async (
   now = new Date(),
 ) => {
   if (running) return;
+  pruneUsageStats();
   running = true;
   try {
     for (const userId of profileUsers()) {

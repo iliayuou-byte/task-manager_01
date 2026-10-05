@@ -192,3 +192,13 @@ scope fails closed in profile mode. Wrap every background task (reminders, retri
 GitHub notifications) with runForUser. Multiple allowlisted users require an explicit
 owner, and profile mode rejects Notion. Google Calendar is owner-only at the client
 operation boundary; do not expose its prompts to testers.
+
+### Test usage statistics
+
+`services/usageStats.ts` counts allowlisted non-owner private interactions in an
+ignored local aggregate store. Mount after user scope and before keyboard/scene
+routing; `/stats` must remain owner-only. A first-use notice precedes collection.
+Never persist message text, task content, audio, callback payloads or raw errors in
+statistics. Logger hooks deduplicate errors per AsyncLocalStorage interaction;
+`saveTasks` counts successful writes only. Background jobs must not inherit usage
+interaction scopes. `checkReminders` prunes 30-day inactive rows.
