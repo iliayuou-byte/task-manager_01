@@ -168,3 +168,9 @@ src/
 ### Completion picker continuity
 
 `showCompletePicker` refreshes the pending-task keyboard after each confirmed save, clamping pagination when the last page becomes empty. Completion moves the task from uncompleted to completed. `panelNotice` sends a tracked inline Back notice without replacing the persistent keyboard or its action mapping; later screen cleanup removes the notice with its picker. Task-card completion similarly returns to the remaining scoped task picker.
+
+### Compact keyboards and domain tags
+
+`buildContextKeyboard` lays out two action buttons per row and paginates more than six actions with chat-bound expiring `kbd` callbacks. Navigation stays available across pages; abbreviated label collisions are disambiguated. Pass message text/options from `panelReply` so keyboard-page navigation retains the full screen and parse mode. Task pickers use six items per page. `returnToTaskList` refreshes live tasks and preserves the Today filter after deletion; calendar prompts can use tracked inline notices to preserve the list keyboard.
+
+`services/taskTags.ts` owns the domain taxonomy, AI prompt and whitelist normalization. AI-generated task tags use the existing generation request; explicit user hashtags remain supported. New list/single tasks and edited names use these tags. Display tags in the matrix, draft and task card. Vocabulary validation does not guarantee semantic correctness; users can edit Tags. Do not automatically overwrite existing tags in storage when changing the vocabulary. See `docs/BOT_UI.md` for message/button editing.

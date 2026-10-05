@@ -8,6 +8,8 @@ import {
   priorityPrompt,
 } from '../services/aiPriorities.js';
 
+import { normalizeTaskTags, taskTagPrompt } from '../services/taskTags.js';
+
 const robustString = (description: string, defaultValue = '') =>
   z
     .preprocess((val) => {
@@ -18,6 +20,7 @@ const robustString = (description: string, defaultValue = '') =>
     .describe(description);
 
 const aiTaskSchema = z.object({
+  tags: z.array(z.string().max(20)).max(3).default([]),
   important: z
     .boolean()
     .nullable()
@@ -168,7 +171,7 @@ const sanitizeTaskFormats = (taskObj: AiGenTask): void => {
   }
 };
 
-export type AiGenTask = Omit<Task, 'completed' | 'tags'>;
+export type AiGenTask = Omit<Task, 'completed'>;
 
 export const generateAiTask = async (
   userText: string,
@@ -182,7 +185,10 @@ export const generateAiTask = async (
     const result = await generateObject({
       model: await getModel(),
       schema: aiTaskSchema,
-      system: getSystemPrompt(timezone) + priorityPrompt(preferences),
+      system:
+        getSystemPrompt(timezone) +
+        priorityPrompt(preferences) +
+        taskTagPrompt(),
       prompt: userPrompt,
     });
 
@@ -193,6 +199,7 @@ export const generateAiTask = async (
     const taskObj = result.object;
     const normalized = {
       ...taskObj,
+      tags: normalizeTaskTags(taskObj.tags, tags),
       important: taskObj.important ?? undefined,
       urgent: taskObj.urgent ?? undefined,
     };
@@ -221,6 +228,7 @@ export const generateAiTask = async (
         system:
           getSystemPrompt(timezone) +
           priorityPrompt(preferences) +
+          taskTagPrompt() +
           '\n\nReturn ONLY a valid JSON object matching the requested schema, with no markdown code blocks.',
         prompt: userPrompt,
       });
@@ -228,6 +236,7 @@ export const generateAiTask = async (
       const taskObj = aiTaskSchema.parse(fallbackResult.object);
       const normalized = {
         ...taskObj,
+        tags: normalizeTaskTags(taskObj.tags, tags),
         important: taskObj.important ?? undefined,
         urgent: taskObj.urgent ?? undefined,
       };
@@ -286,9 +295,10 @@ Date is a planned date, YYYY-MM-DD, only when stated. Otherwise empty string.
 Duration is H:MM only when explicitly stated, even without a date. Otherwise empty string.
 Priority: medium by default; change only when explicitly stated (urgent, high, low).
 Classify importance and urgency separately. Importance: true for significant goals/consequences, false for low-value tasks, null if unclear. Urgency: true for explicit urgency or a near deadline, false otherwise. A planned date alone is not a deadline. Respect explicit user overrides.
-Tags: copy relevant hashtags without #; otherwise []. Do not assign clock times.
+Do not assign clock times.
 Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium","important":null,"urgent":false,"tags":[]}]}.` +
-    priorityPrompt(preferences);
+    priorityPrompt(preferences) +
+    taskTagPrompt();
   let object: unknown;
   try {
     const result = await generateObject({
@@ -309,6 +319,10 @@ Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium",
   }
   return brainSchema.parse(object).tasks.map((task) => ({
     ...task,
+    tags: normalizeTaskTags(
+      task.tags,
+      [...input.matchAll(/#([\p{L}\p{N}_-]+)/gu)].map((match) => match[1]),
+    ),
     important: task.important ?? undefined,
     urgent: task.urgent ?? undefined,
     completed: false,

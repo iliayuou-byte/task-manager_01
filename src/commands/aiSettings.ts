@@ -49,8 +49,8 @@ const showSettings = async (ctx: BotContext) => {
       reply_markup: new InlineKeyboard()
         .text(
           metadata.ai_auto_priority === 'off'
-            ? 'Включить автораспределение'
-            : 'Выключить автораспределение',
+            ? 'Включить авто'
+            : 'Выключить авто',
           `ai:toggle:${state.id}`,
         )
         .row()

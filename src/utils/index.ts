@@ -7,7 +7,7 @@ import {
   type BotContext,
   setPendingCalendarOps,
 } from '../middlewares/session.js';
-import { panelReply } from '../services/chatPanel.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { navigationKeyboard } from '../views/menuView.js';
 
 // Extract argument from command text
@@ -278,9 +278,12 @@ export const promptCalendarAction = async (
   ctx: BotContext,
   message: string,
   ops: CalendarOpSession[],
+  keepKeyboard = false,
 ) => {
   setPendingCalendarOps(ctx.from!.id, ops);
-  await panelReply(ctx, message, { reply_markup: calendarKeyboard });
+  await (keepKeyboard ? panelNotice : panelReply)(ctx, message, {
+    reply_markup: calendarKeyboard,
+  });
 };
 
 export const logAndReplyError = (

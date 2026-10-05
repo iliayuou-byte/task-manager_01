@@ -213,7 +213,7 @@ test('AI settings save multiline rules, toggle auto and cancel rule entry', asyn
   expect(f.data().metadata.ai_priority_rules).toBe(
     'Учёба важна.\nСрочно только при дедлайне.',
   );
-  await f.click(f.button('Выключить автораспределение'));
+  await f.click(f.button('Выключить авто'));
   expect(f.data().metadata.ai_auto_priority).toBe('off');
   await f.click(f.button('Мои правила'));
   await f.click('menu:settings');
@@ -257,6 +257,7 @@ test('time navigation goes one step back and home clears pending input', async (
   const f = fixture(507);
   await f.click('menu:reminders');
   await f.click(f.button('09:00 — изменить'));
+  await f.tap('▶️');
   await f.click(f.button('08'));
   await f.click(f.button('Назад'));
   expect(
@@ -491,6 +492,7 @@ test('AI rules and time selection buttons work through actual keyboard text', as
   await f.tap('Назад');
   await f.tap('Напоминания');
   await f.tap('09:00 — изменить');
+  await f.tap('▶️');
   await f.tap('08');
   await f.tap('08:15');
   expect(f.data().metadata.reminder_times).toBe('08:15,19:00');
@@ -540,17 +542,17 @@ test('task card completion returns to remaining task picker instead of main menu
 
 test('completion on the last picker page returns to a valid remaining page', async () => {
   const f = fixture(542);
-  f.data().taskData.uncompleted = Array.from({ length: 9 }, (_, index) => ({
+  f.data().taskData.uncompleted = Array.from({ length: 7 }, (_, index) => ({
     name: `Дело ${index + 1}`,
     completed: false,
     tags: [],
   }));
   await f.text('/complete');
   await f.tap('Next');
-  await f.tap('Дело 9');
+  await f.tap('Дело 7');
   expect(f.labels()).toContain('Дело 1');
-  expect(f.labels()).not.toContain('Дело 9');
-  expect(f.data().taskData.uncompleted).toHaveLength(8);
+  expect(f.labels()).not.toContain('Дело 7');
+  expect(f.data().taskData.uncompleted).toHaveLength(6);
 });
 
 test('named completion keeps the picker and removes its old notice on navigation', async () => {
@@ -567,4 +569,41 @@ test('named completion keeps the picker and removes its old notice on navigation
       (call) => call.method === 'deleteMessage' && call.message_id === noticeId,
     ),
   ).toBe(true);
+});
+
+test('confirmed deletion refreshes the task list and supports choosing another task', async () => {
+  const f = fixture(550);
+  await f.text(MENU.all);
+  await f.tap('1. Первое');
+  await f.tap('Удалить');
+  await f.tap('Удалить');
+  expect(f.data().taskData.uncompleted.map((task) => task.name)).toEqual([
+    'Второе',
+  ]);
+  expect(f.labels()).toContain('1. Второе');
+  await f.tap('1. Второе');
+  expect(f.labels()).toContain('🗑 Удалить');
+});
+
+test('compact keyboards page through hours without losing actions or navigation', async () => {
+  const f = fixture(551);
+  await f.click('menu:reminders');
+  await f.tap('09:00 — изменить');
+  const assertRows = () => {
+    const call = [...f.calls]
+      .reverse()
+      .find(
+        (call) =>
+          call.reply_markup && 'keyboard' in (call.reply_markup as object),
+      );
+    expect(
+      (call!.reply_markup as { keyboard: unknown[] }).keyboard.length,
+    ).toBeLessThanOrEqual(4);
+  };
+  assertRows();
+  await f.tap('▶️');
+  assertRows();
+  await f.tap('08');
+  await f.tap('08:15');
+  expect(f.data().metadata.reminder_times).toBe('08:15,19:00');
 });

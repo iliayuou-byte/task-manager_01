@@ -156,5 +156,9 @@ const processNewTask = async (
 ): Promise<Task> => {
   const { tags, text } = parseUserText(userText);
   const task = await generateAiTask(text, tags, timezone, preferences);
-  return { completed: false, ...task, tags };
+  return {
+    completed: false,
+    ...task,
+    tags: [...new Set([...tags, ...task.tags])],
+  };
 };

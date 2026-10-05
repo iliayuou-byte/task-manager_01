@@ -3,7 +3,7 @@ import { Command } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { TaskTypeToOp } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
-import { panelReply } from '../services/chatPanel.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -70,9 +70,12 @@ export const removeCommand = async (ctx: BotContext) => {
 
     // Then remove from task table
     taskData[taskTypeToRemove].splice(taskIdx, 1);
-    await saveTasks(taskData, metadata);
+    if (!(await saveTasks(taskData, metadata)))
+      throw new Error('Storage did not confirm save');
 
-    await panelReply(
+    const { returnToTaskList } = await import('./menu.js');
+    await returnToTaskList(ctx);
+    await panelNotice(
       ctx,
       formatOperatedTaskStr(taskToRemove, {
         command: Command.REMOVE,
@@ -86,6 +89,7 @@ export const removeCommand = async (ctx: BotContext) => {
         ctx,
         'Remove corresponding Google Calendar Event?',
         [{ type: 'remove', taskName: taskToRemove.name, calendarEventId }],
+        true,
       );
     }
   } catch (error) {

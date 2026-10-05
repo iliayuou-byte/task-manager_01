@@ -7,7 +7,7 @@ import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { markTaskCompleted, promptCalendarAction } from '../utils/index.js';
 
-const TASKS_PER_PAGE = 8;
+const TASKS_PER_PAGE = 6;
 const MAX_NAME_LENGTH = 28;
 
 type PickerCommand = 'complete' | 'remove' | 'edit';
@@ -213,15 +213,21 @@ const handleRemove = async (
   const calendarEventId = task.calendarEventId;
   const list = taskType === 'u' ? 'uncompleted' : 'completed';
   taskData[list].splice(idx, 1);
-  await saveTasks(taskData, metadata);
+  if (!(await saveTasks(taskData, metadata)))
+    throw new Error('Storage did not confirm save');
 
-  await panelReply(ctx, `🗑️ Removed: ${task.name}`);
+  const { returnToTaskList } = await import('../commands/menu.js');
+  await returnToTaskList(ctx);
+  await panelNotice(ctx, `🗑️ Удалено: ${task.name}`, {
+    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+  });
 
   if (calendarEventId) {
     await promptCalendarAction(
       ctx,
       'Remove corresponding Google Calendar Event?',
       [{ type: 'remove', taskName: task.name, calendarEventId }],
+      true,
     );
   }
 };

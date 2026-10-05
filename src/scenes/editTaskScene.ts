@@ -201,6 +201,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       updatedTask = {
         ...updatedTask,
         ...generatedTask,
+        tags: [...new Set([...updatedTask.tags, ...generatedTask.tags])],
         ...(oldTask.priorityLocked
           ? { important: oldTask.important, urgent: oldTask.urgent }
           : {}),

@@ -13,6 +13,7 @@ import {
 import { getQuadrant, QUADRANTS, setQuadrant } from '../services/eisenhower.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
+import { displayTaskTags } from '../services/taskTags.js';
 import { extractArg, logAndReplyError } from '../utils/index.js';
 import { splitMessages } from '../views/eisenhowerView.js';
 
@@ -112,7 +113,7 @@ const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
     ...draft.tasks.flatMap((task, index) =>
       getQuadrant(task) === quadrant + 1
         ? [
-            `${index + 1}. ${draft.reviewed.has(index) ? '✅' : '❓'} ${task.name.replace(/\s+/g, ' ').slice(0, 250)}${task.date ? ` (${task.date}${task.time ? ` ${task.time}` : ''})` : ''}`,
+            `${index + 1}. ${draft.reviewed.has(index) ? '✅' : '❓'} ${task.name.replace(/\s+/g, ' ').slice(0, 250)}${displayTaskTags(task.tags)}${task.date ? ` (${task.date}${task.time ? ` ${task.time}` : ''})` : ''}`,
           ]
         : [],
     ),
@@ -166,7 +167,7 @@ const showDraftTask = async (
         `brain_set:${id}:${index}:${getQuadrant(task)}:all`,
       )
       .row();
-  keyboard.text('⬅️ Назад', `brain_pick:${id}:${Math.floor(index / 8)}`);
+  keyboard.text('⬅️ Назад', `brain_pick:${id}:${Math.floor(index / 6)}`);
   await panelReply(
     ctx,
     `Дело ${index + 1} из ${draft.tasks.length}: ${task.name}\n\nПредложенная категория: ${QUADRANTS[getQuadrant(task) - 1]}\n\nВажно ли это для твоих целей? Что случится, если отложить? Есть ли срок — например, до выхода из дома? Выбери категорию.`,
@@ -181,8 +182,8 @@ const showDraftPicker = async (
   page: number,
 ) => {
   const keyboard = new InlineKeyboard();
-  const start = page * 8;
-  draft.tasks.slice(start, start + 8).forEach((task, offset) => {
+  const start = page * 6;
+  draft.tasks.slice(start, start + 6).forEach((task, offset) => {
     keyboard
       .text(
         `${start + offset + 1}. ${task.name.slice(0, 45)}`,
@@ -191,7 +192,7 @@ const showDraftPicker = async (
       .row();
   });
   if (page > 0) keyboard.text('◀️ Ранее', `brain_pick:${id}:${page - 1}`);
-  if (start + 8 < draft.tasks.length)
+  if (start + 6 < draft.tasks.length)
     keyboard.text('Далее ▶️', `brain_pick:${id}:${page + 1}`);
   keyboard.row().text('⬅️ Назад', `brain_preview:${id}`);
   await panelReply(ctx, 'Выбери дело, которому нужно изменить категорию.', {
@@ -222,7 +223,7 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
         await ctx.answerCallbackQuery({ text: 'Дело недоступно.' });
         return;
       }
-      if (action === 'pick' && index * 8 >= draft.tasks.length) {
+      if (action === 'pick' && index * 6 >= draft.tasks.length) {
         await ctx.answerCallbackQuery({ text: 'Страница недоступна.' });
         return;
       }

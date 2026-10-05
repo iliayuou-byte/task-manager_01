@@ -1,6 +1,8 @@
 import type { Task } from '../core/types.js';
 import { getQuadrant, QUADRANTS } from '../services/eisenhower.js';
 
+import { displayTaskTags } from '../services/taskTags.js';
+
 export const matrixLines = (tasks: readonly Task[]): string[] => {
   let number = 0;
   return QUADRANTS.flatMap((title, index) => {
@@ -17,7 +19,7 @@ export const matrixLines = (tasks: readonly Task[]): string[] => {
             ]
               .filter(Boolean)
               .join(' · ');
-            return `${++number}. ${task.completed ? '✅ ' : ''}${task.name.replace(/\s+/g, ' ').slice(0, 250)}${details ? ` (${details})` : ''}`;
+            return `${++number}. ${task.completed ? '✅ ' : ''}${task.name.replace(/\s+/g, ' ').slice(0, 250)}${details ? ` (${details})` : ''}${displayTaskTags(task.tags)}`;
           })),
       '',
     ];

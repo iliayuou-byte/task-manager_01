@@ -33,6 +33,7 @@ interface MenuState {
   expires: number;
   input?: 'brain' | 'time';
   tasks?: Task[];
+  today?: boolean;
   selected?: Task;
   times?: string[];
   timeIndex?: number;
@@ -71,6 +72,11 @@ export const menuCommand = async (ctx: BotContext) => {
   );
 };
 
+export const returnToTaskList = async (ctx: BotContext) => {
+  const today = states.get(ctx.from!.id)?.today ?? false;
+  return showTasks(ctx, today);
+};
+
 export const showTasks = async (ctx: BotContext, today = false) => {
   const { taskData, metadata } = await queryTasks();
   const date = formatInTimeZone(
@@ -85,6 +91,7 @@ export const showTasks = async (ctx: BotContext, today = false) => {
   );
   const state = newState(ctx);
   state.tasks = structuredClone(tasks);
+  state.today = today;
   const messages = splitMessages([
     today ? `📋 Сегодня · ${date}` : '📚 Все незавершённые дела',
     '',
@@ -106,8 +113,8 @@ const showPicker = async (
   const tasks = state.tasks ?? [];
   const keyboard = new InlineKeyboard();
   for (
-    let index = page * 8;
-    index < Math.min(tasks.length, (page + 1) * 8);
+    let index = page * 6;
+    index < Math.min(tasks.length, (page + 1) * 6);
     index++
   )
     keyboard
@@ -117,7 +124,7 @@ const showPicker = async (
       )
       .row();
   if (page > 0) keyboard.text('◀️', `menu:page:${state.id}:${page - 1}`);
-  if ((page + 1) * 8 < tasks.length)
+  if ((page + 1) * 6 < tasks.length)
     keyboard.text('▶️', `menu:page:${state.id}:${page + 1}`);
   keyboard.row().text('⬅️ Назад', 'menu:home').text('🏠 Меню', 'menu:home');
   await panelReply(
@@ -219,15 +226,19 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
     .text(
       task.priorityLocked
         ? '🧠 Разрешить ИИ менять раздел'
-        : '🔒 Закрепить раздел',
+        : '🔒 Защитить категорию',
       `menu:lock:${state.id}`,
     )
     .row()
     .text('⬅️ Назад', `menu:tasks:${state.id}`)
     .text('🏠 Меню', 'menu:home');
-  await panelReply(ctx, `${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}`, {
-    reply_markup: keyboard,
-  });
+  await panelReply(
+    ctx,
+    `${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}\n${task.tags.map((tag) => `#${tag}`).join(' ')}\n\n${task.priorityLocked ? '🔒 Категория защищена от изменений ИИ.' : '🧠 ИИ может предложить другую категорию.'}`,
+    {
+      reply_markup: keyboard,
+    },
+  );
 };
 
 export const registerMenu = (composer: Composer<BotContext>) => {
@@ -464,6 +475,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         );
         const refreshed = newState(ctx);
         refreshed.tasks = remaining;
+        refreshed.today = state.today;
         rememberTaskNumbers(ctx.from.id, ctx.chat!.id, remaining);
         await showPicker(ctx, refreshed, 0);
         return await panelNotice(ctx, `✅ Готово: ${task.name}`, {

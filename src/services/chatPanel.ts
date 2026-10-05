@@ -79,7 +79,11 @@ export const panelReply = async (
       'inline_keyboard' in markup &&
       markup.inline_keyboard.flat().every((button) => 'callback_data' in button)
     ) {
-      const screen = buildContextKeyboard(markup.inline_keyboard);
+      const screen = buildContextKeyboard(markup.inline_keyboard, {
+        chat: ctx.chat.id,
+        text,
+        options,
+      });
       keyboardActions = screen.callbacks;
       options = { ...options, reply_markup: screen.keyboard };
     } else if ('keyboard' in markup) keyboardActions = new Map();

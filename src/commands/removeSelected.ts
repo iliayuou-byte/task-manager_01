@@ -5,6 +5,7 @@ import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import {
   beginPanel,
+  panelNotice,
   panelReply,
   removeVoiceInput,
 } from '../services/chatPanel.js';
@@ -186,10 +187,11 @@ export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
       if (!(await saveTasks(updated, metadata)))
         throw new Error('Save not confirmed');
       pending.delete(id);
-      await panelReply(
-        ctx,
-        `✅ Удалено дел: ${draft.tasks.length}.\nОткрой /list для новых номеров.`,
-      );
+      const { returnToTaskList } = await import('./menu.js');
+      await returnToTaskList(ctx);
+      await panelNotice(ctx, `✅ Удалено дел: ${draft.tasks.length}.`, {
+        reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+      });
       const ops = draft.tasks
         .filter((task) => task.calendarEventId)
         .map((task) => ({
@@ -202,6 +204,7 @@ export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
           ctx,
           'Удалить связанные события Google Calendar?',
           ops,
+          true,
         );
     } catch (error) {
       draft.saving = false;
