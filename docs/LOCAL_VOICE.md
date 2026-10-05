@@ -9,15 +9,17 @@
 ```sh
 git pull origin feature/daily-copilot-now
 bun install
-python3 --version
-python3 -m venv .venv
+python3.12 --version
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-voice.txt
 .venv/bin/python scripts/transcribeVoice.py --prepare
 ```
 
-Нужен Python 3.9 или новее; рекомендуется 3.11–3.12. Если Python отсутствует, установите его с https://www.python.org/downloads/. Установка библиотек зависит от доступности пакетов для вашей версии Python и архитектуры Mac. При ошибке установки сохраните текст ошибки без секретов.
+Используйте Python 3.12. Установщик для Mac: https://www.python.org/downloads/release/python-31210/ (macOS 64-bit universal2 installer). На Intel Mac окружение Python 3.14 может не находить пакет onnxruntime. Если `.venv` уже создана другой версией Python, пересоздайте только окружение командой `python3.12 -m venv --clear .venv`; `.env` сохраняется. Установка библиотек зависит от доступности пакетов для вашей версии Python и архитектуры Mac. При ошибке установки сохраните текст ошибки без секретов.
 
 Первый запуск `--prepare` скачивает модель `small` и может занять несколько минут. Нужен интернет. Отдельно устанавливать FFmpeg для этого обработчика не требуется.
+
+Если распознавание выдаёт `TypeError: open() got an unexpected keyword argument 'metadata_errors'`, установлен несовместимый PyAV 19. Обновите ветку и снова выполните `.venv/bin/python -m pip install -r requirements-voice.txt`: зависимости ограничивают PyAV версией ниже 19. Проверка `--prepare` только загружает модель и не проверяет декодирование настоящего аудио.
 
 ## Windows 11
 
