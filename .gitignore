@@ -21,3 +21,8 @@ Thumbs.db
 # Credentials & Vercel
 google-api-credentials.json
 .vercel
+
+# Local speech dependencies and pending transcripts
+.venv/
+runtime/
+__pycache__/

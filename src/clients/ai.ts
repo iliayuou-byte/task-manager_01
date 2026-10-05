@@ -3,11 +3,12 @@ import { z } from 'zod';
 
 import logger from '../core/logger.js';
 import { type Metadata, Priority, type Task } from '../core/types.js';
+import { isSchemaFailure } from '../services/aiFailure.js';
 import {
   type PriorityProposal,
   priorityPrompt,
 } from '../services/aiPriorities.js';
-
+import { transcribeLocalVoice } from '../services/localVoice.js';
 import { normalizeTaskTags, taskTagPrompt } from '../services/taskTags.js';
 
 const robustString = (description: string, defaultValue = '') =>
@@ -183,6 +184,8 @@ export const generateAiTask = async (
   const userPrompt = getUserPrompt(tags, userText);
   try {
     const result = await generateObject({
+      maxRetries: 0,
+      abortSignal: AbortSignal.timeout(90_000),
       model: await getModel(),
       schema: aiTaskSchema,
       system:
@@ -215,6 +218,7 @@ export const generateAiTask = async (
 
     return normalized;
   } catch (error) {
+    if (!isSchemaFailure(error)) throw error;
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.warnWithContext({
       op: 'AI_API_ERROR',
@@ -223,6 +227,8 @@ export const generateAiTask = async (
 
     try {
       const fallbackResult = await generateObject({
+        maxRetries: 0,
+        abortSignal: AbortSignal.timeout(90_000),
         model: await getModel(),
         output: 'no-schema',
         system:
@@ -302,14 +308,19 @@ Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium",
   let object: unknown;
   try {
     const result = await generateObject({
+      maxRetries: 0,
+      abortSignal: AbortSignal.timeout(90_000),
       model: await getModel(),
       schema: brainSchema,
       system,
       prompt: input,
     });
     object = result.object;
-  } catch {
+  } catch (error) {
+    if (!isSchemaFailure(error)) throw error;
     const result = await generateObject({
+      maxRetries: 0,
+      abortSignal: AbortSignal.timeout(90_000),
       model: await getModel(),
       output: 'no-schema',
       system,
@@ -330,6 +341,10 @@ Return JSON {"tasks":[{"name":"...","date":"","duration":"","priority":"medium",
 };
 
 export const transcribeVoice = async (audio: Uint8Array): Promise<string> => {
+  const provider = process.env.VOICE_TRANSCRIPTION_PROVIDER ?? 'gemini';
+  if (provider === 'local') return transcribeLocalVoice(audio);
+  if (provider !== 'gemini')
+    throw new Error('Unknown voice transcription provider');
   if (process.env.AI_PROVIDER !== 'gemini') {
     throw new Error('Voice transcription currently requires Gemini');
   }

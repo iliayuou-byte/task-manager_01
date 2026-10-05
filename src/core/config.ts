@@ -51,6 +51,7 @@ export enum Command {
   START = 'start',
   MENU = 'menu',
   BRAIN = 'brain',
+  RETRY = 'retry',
   QUADRANT = 'quadrant',
   REMINDERS = 'reminders',
   LIST = 'list',
@@ -93,6 +94,10 @@ export const COMMANDS: Record<Command, CommandType> = {
   },
   [Command.START]: { desc: 'open the main menu', category: 'info' },
   [Command.MENU]: { desc: 'open the main menu', category: 'info' },
+  [Command.RETRY]: {
+    desc: 'retry a saved task input',
+    category: 'task-operation',
+  },
   [Command.BRAIN]: {
     desc: 'turn a brain dump into tasks for review',
     category: 'task-operation',

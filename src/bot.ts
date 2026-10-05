@@ -37,6 +37,7 @@ import { type BotContext, sessionMiddleware } from './middlewares/session.js';
 import { editSceneComposer, enterEditScene } from './scenes/editTaskScene.js';
 import { panelReply } from './services/chatPanel.js';
 import { registerContextKeyboard } from './services/contextKeyboard.js';
+import { registerPendingInputs } from './services/pendingInputs.js';
 import { START_WORDING } from './views/generalView.js';
 import { mainKeyboard } from './views/menuView.js';
 
@@ -91,6 +92,7 @@ opComposer.command(Command.NOW, nowCommand);
 opComposer.command(Command.BRAIN, brainCommand);
 opComposer.command(Command.QUADRANT, quadrantCommand);
 opComposer.command(Command.REMINDERS, remindersCommand);
+registerPendingInputs(opComposer);
 registerBrainActions(opComposer);
 registerSelectedRemoval(opComposer);
 opComposer.on('message:voice', voiceMessage);

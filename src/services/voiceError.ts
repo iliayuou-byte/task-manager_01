@@ -1,3 +1,5 @@
+import { LocalVoiceError } from './localVoice.js';
+
 export type VoiceStage = 'download' | 'transcribe' | 'tasks';
 
 // Return only fixed diagnostic labels. Raw errors may contain credentials/URLs.
@@ -18,12 +20,24 @@ export const voiceError = (error: unknown, stage: VoiceStage) => {
   const message = typeof record.message === 'string' ? record.message : '';
   let code = 'unknown';
   let reason = 'Причину сбоя нужно проверить в журнале бота.';
-  if (status === 429) {
+  const provider = process.env.AI_PROVIDER === 'openai' ? 'OpenAI' : 'Gemini';
+  if (error instanceof LocalVoiceError) {
+    code = `local_${error.code}`;
+    reason = {
+      setup:
+        'Whisper не установлен или не найден Python. Выполни настройку локального голоса.',
+      failed:
+        'Локальное распознавание не сработало. Проверь установку модели и запись.',
+      timeout:
+        'Локальное распознавание заняло больше четырёх минут. Можно выбрать модель base.',
+      busy: 'Сейчас расшифровываю другое ГС. Повтори после его завершения.',
+    }[error.code];
+  } else if (status === 429) {
     code = 'rate_limit';
-    reason = 'Gemini ограничил запросы: проверь квоту или повтори позже.';
+    reason = `${provider} ограничил запросы: проверь квоту или повтори позже.`;
   } else if (status === 503 || /high demand|overloaded/i.test(message)) {
     code = 'overloaded';
-    reason = 'Gemini сейчас перегружен. Попробуй повторить позже.';
+    reason = `${provider} сейчас перегружен. Попробуй повторить позже.`;
   } else if (status === 401 || status === 403) {
     code = 'access_denied';
     reason = 'Сервис отклонил доступ. Нужно проверить ключ и его разрешения.';
@@ -32,7 +46,7 @@ export const voiceError = (error: unknown, stage: VoiceStage) => {
     reason =
       stage === 'download'
         ? 'Telegram не отдал файл. Перешли это голосовое боту ещё раз.'
-        : 'Модель Gemini недоступна. Нужно проверить AI_MODEL.';
+        : `Модель ${provider} недоступна. Нужно проверить AI_MODEL.`;
   } else if (/AbortError|TimeoutError/.test(name)) {
     code = 'timeout';
     reason = 'Сервис не ответил вовремя. Попробуй повторить позже.';

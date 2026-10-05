@@ -33,10 +33,13 @@ export const voiceMessage = async (ctx: BotContext) => {
       'Отправь ГС до 3 минут и 8 МБ. Длинный список можно разделить.',
     );
   }
-  if (process.env.AI_PROVIDER !== 'gemini') {
+  if (
+    (process.env.VOICE_TRANSCRIPTION_PROVIDER ?? 'gemini') === 'gemini' &&
+    process.env.AI_PROVIDER !== 'gemini'
+  ) {
     return await panelReply(
       ctx,
-      'Голосовые пока работают с AI_PROVIDER=gemini. Можно добавить дела через /brain текстом.',
+      'Для голоса включи VOICE_TRANSCRIPTION_PROVIDER=local и установи Whisper. Пока можно добавить дела текстом.',
     );
   }
   let stage: VoiceStage = 'download';

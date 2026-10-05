@@ -11,6 +11,7 @@ import {
   removeVoiceInput,
 } from '../services/chatPanel.js';
 import { getQuadrant, QUADRANTS, setQuadrant } from '../services/eisenhower.js';
+import { pausePendingInputs, recoverInput } from '../services/pendingInputs.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { displayTaskTags } from '../services/taskTags.js';
@@ -27,6 +28,7 @@ interface Draft {
 }
 const drafts = new Map<string, Draft>();
 export const cancelBrainDrafts = (ctx: BotContext) => {
+  pausePendingInputs(ctx);
   for (const [id, draft] of drafts)
     if (
       draft.owner === ctx.from?.id &&
@@ -41,7 +43,12 @@ export const brainCommand = async (ctx: BotContext) => {
   return processBrainInput(ctx, input);
 };
 
-export const processBrainInput = async (ctx: BotContext, input: string) => {
+export const processBrainInput = async (
+  ctx: BotContext,
+  input: string,
+  retrying = false,
+  shouldContinue = () => true,
+) => {
   try {
     if (ctx.chat?.type !== 'private') {
       return await panelReply(ctx, 'Используй /brain в личном чате с ботом.');
@@ -65,6 +72,7 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
       await generateBrainTasks(input, metadata.timezone, metadata),
       taskData.uncompleted,
     );
+    if (!shouldContinue()) return;
     if (!tasks.length)
       return await panelReply(
         ctx,
@@ -90,12 +98,8 @@ export const processBrainInput = async (ctx: BotContext, input: string) => {
     await showDraft(ctx, id, draft);
     await removeVoiceInput(ctx);
   } catch (error) {
-    await logAndReplyError(
-      ctx,
-      Command.BRAIN,
-      error,
-      '❌ Не удалось разобрать список. Задачи не сохранены.',
-    );
+    if (retrying) throw error;
+    await recoverInput(ctx, input, error, 'brain');
   }
 };
 

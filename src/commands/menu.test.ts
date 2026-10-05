@@ -1,4 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Bot } from 'grammy';
 import { registerTaskPickerAction } from '../actions/taskPicker.js';
 import * as aiClient from '../clients/ai.js';
@@ -9,6 +12,11 @@ import {
   getKeyboardAction,
   registerContextKeyboard,
 } from '../services/contextKeyboard.js';
+import {
+  PendingInputStore,
+  registerPendingInputs,
+  retryPendingInputsOnce,
+} from '../services/pendingInputs.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
@@ -85,6 +93,7 @@ const fixture = (user: number) => {
   registerContextKeyboard(bot);
   registerAiSettings(bot);
   registerMenu(bot);
+  registerPendingInputs(bot);
   registerBrainActions(bot);
   registerSelectedRemoval(bot);
   registerTaskPickerAction(bot);
@@ -163,7 +172,7 @@ const fixture = (user: number) => {
     if (!value) throw new Error(`Button missing: ${label}`);
     await text(value);
   };
-  return { text, click, button, labels, tap, calls, data: () => data };
+  return { bot, text, click, button, labels, tap, calls, data: () => data };
 };
 
 test('reminder buttons preserve disabled schedule and restore it', async () => {
@@ -606,4 +615,82 @@ test('compact keyboards page through hours without losing actions or navigation'
   await f.tap('08');
   await f.tap('08:15');
   expect(f.data().metadata.reminder_times).toBe('08:15,19:00');
+});
+
+test('failed AI input is durable and manual retry uses text without another transcription', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'brain-retry-'));
+  const previous = process.env.PENDING_INPUTS_PATH;
+  process.env.PENDING_INPUTS_PATH = join(directory, 'jobs.json');
+  const f = fixture(560);
+  const generation = spyOn(aiClient, 'generateBrainTasks').mockRejectedValue({
+    statusCode: 429,
+    data: { error: { code: 'insufficient_quota' } },
+  });
+  spies.push(generation);
+  try {
+    await f.text(MENU.add);
+    await f.text('Купить продукты');
+    const store = new PendingInputStore(process.env.PENDING_INPUTS_PATH);
+    expect(store.read()[0]).toMatchObject({
+      owner: 560,
+      text: 'Купить продукты',
+      next: 0,
+    });
+    generation.mockResolvedValue([
+      { name: 'Купить продукты', completed: false, tags: ['покупки'] },
+    ]);
+    await f.tap('Повторить разбор');
+    expect(generation).toHaveBeenCalledTimes(2);
+    expect(store.read()).toEqual([]);
+    expect(f.labels()).toContain('✅ Сохранить');
+    expect(f.data().taskData.uncompleted).toHaveLength(2);
+  } finally {
+    if (previous === undefined) delete process.env.PENDING_INPUTS_PATH;
+    else process.env.PENDING_INPUTS_PATH = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('background retry is allowlisted, produces only a draft, and Home pauses retry', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'auto-retry-'));
+  const previous = process.env.PENDING_INPUTS_PATH;
+  const allowed = process.env.TELEGRAM_BOT_ALLOWLIST;
+  process.env.PENDING_INPUTS_PATH = join(directory, 'jobs.json');
+  process.env.TELEGRAM_BOT_ALLOWLIST = '561';
+  const f = fixture(561);
+  const generation = spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+    { name: 'Продукты', completed: false, tags: [] },
+  ]);
+  spies.push(generation);
+  const store = new PendingInputStore(process.env.PENDING_INPUTS_PATH);
+  const job = {
+    id: 'auto',
+    owner: 561,
+    chat: 561,
+    text: 'Продукты',
+    mode: 'brain' as const,
+    expires: Date.now() + 60000,
+    next: 1,
+    attempts: 0,
+  };
+  try {
+    store.put(job);
+    store.put({ ...job, id: 'foreign', owner: 999, chat: 999 });
+    await retryPendingInputsOnce(f.bot);
+    expect(generation).toHaveBeenCalledTimes(1);
+    expect(f.labels()).toContain('✅ Сохранить');
+    expect(store.read().map((item) => item.id)).toEqual(['foreign']);
+    expect(f.data().taskData.uncompleted).toHaveLength(2);
+    store.put(job);
+    await f.text(MENU.home);
+    expect(store.read().find((item) => item.id === 'auto')?.next).toBe(0);
+    await retryPendingInputsOnce(f.bot);
+    expect(generation).toHaveBeenCalledTimes(1);
+  } finally {
+    if (previous === undefined) delete process.env.PENDING_INPUTS_PATH;
+    else process.env.PENDING_INPUTS_PATH = previous;
+    if (allowed === undefined) delete process.env.TELEGRAM_BOT_ALLOWLIST;
+    else process.env.TELEGRAM_BOT_ALLOWLIST = allowed;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -7,7 +7,7 @@ This document serves as the primary instruction manual for AI agents and develop
 **Stack**: TypeScript, Bun, Hono, grammY (Telegram Bot).
 **Deployment**: Vercel (Serverless).
 **Database**: GitHub Markdown File (No SQL/NoSQL DB).
-**AI**: Google Gemini (via `@google/genai`).
+**AI**: Gemini, OpenAI or Anthropic through the AI SDK; optional local faster-whisper transcription.
 
 ## 2. Environment & Setup
 
@@ -160,6 +160,10 @@ src/
 ### Voice failures
 
 `commands/voice.ts` removes its own transient status on every exit. `services/voiceError.ts` exposes only fixed stage/code/status diagnostics, never raw download errors (URLs can contain Telegram tokens). Keep the original voice on failures; forwarding it retries without recording again. `removePanelMessage` removes a specific status without deleting a newer menu.
+
+`services/localVoice.ts` runs `scripts/transcribeVoice.py` with audio on stdin, shell disabled, bounded output/time and one worker. Python uses CPU int8 faster-whisper. Never log process stderr or send audio to an API in local mode. Existing configurations without `VOICE_TRANSCRIPTION_PROVIDER` retain Gemini transcription. See `docs/LOCAL_VOICE.md` for setup.
+
+`services/pendingInputs.ts` persists failed brain/removal text for 24 hours in an ignored local runtime file. Ownership/chat checks apply to retries; background polling checks the allowlist. Only temporary failures receive at most two background retries. Billing/auth errors require manual retry. Menu cancellation pauses retries and suppresses late drafts. Every retry produces a confirmation preview, never an automatic storage mutation. Schema fallback requests must not retry provider quota errors; `services/aiFailure.ts` classifies errors without exposing raw payloads.
 
 ### Draft category review
 

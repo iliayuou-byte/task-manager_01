@@ -9,6 +9,7 @@ import {
   panelReply,
   removeVoiceInput,
 } from '../services/chatPanel.js';
+import { recoverInput } from '../services/pendingInputs.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -116,7 +117,12 @@ export const removeByNumbers = async (ctx: BotContext, input: string) => {
   }
 };
 
-export const removeByVoice = async (ctx: BotContext, transcript: string) => {
+export const removeByVoice = async (
+  ctx: BotContext,
+  transcript: string,
+  retrying = false,
+  shouldContinue = () => true,
+) => {
   try {
     const { taskData } = await queryTasks();
     const snapshot = getNumberedTasks(ctx.from!.id, ctx.chat!.id);
@@ -124,6 +130,7 @@ export const removeByVoice = async (ctx: BotContext, transcript: string) => {
       snapshot ??
       numberedTasks([...taskData.uncompleted, ...taskData.completed]);
     const selection = await generateVoiceRemoval(transcript, tasks);
+    if (!shouldContinue()) return;
     if (selection.mode !== 'delete')
       return await panelReply(
         ctx,
@@ -144,12 +151,8 @@ export const removeByVoice = async (ctx: BotContext, transcript: string) => {
       selection.numbers.map((number) => tasks[number - 1]),
     );
   } catch (error) {
-    logAndReplyError(
-      ctx,
-      'REMOVE_VOICE',
-      error,
-      '❌ Не удалось разобрать удаление. Ничего не удалено. Можно использовать /remove 1 3 после /list.',
-    );
+    if (retrying) throw error;
+    await recoverInput(ctx, transcript, error, 'remove');
   }
 };
 
