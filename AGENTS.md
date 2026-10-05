@@ -156,3 +156,7 @@ src/
 ### Context reply keyboards
 
 `services/contextKeyboard.ts` translates callback-backed inline screen definitions into contextual reply keyboards and maps their text taps back to the validated handlers. Mount it behind allowlist and before commands/scenes. `panelReply` remembers mappings only after successful send, clears them for the main keyboard and replaces old panels because Telegram reply keyboards cannot be edited into a message. Main keyboard has five sections and no navigation/task mutation shortcuts. Preserve actual callback ownership/expiry validation; synthetic callbacks must never call Telegram answerCallbackQuery.
+
+### Voice failures
+
+`commands/voice.ts` removes its own transient status on every exit. `services/voiceError.ts` exposes only fixed stage/code/status diagnostics, never raw download errors (URLs can contain Telegram tokens). Keep the original voice on failures; forwarding it retries without recording again. `removePanelMessage` removes a specific status without deleting a newer menu.

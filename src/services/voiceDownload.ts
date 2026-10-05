@@ -1,10 +1,18 @@
 export const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 export const MAX_VOICE_SECONDS = 180;
 
+export class VoiceDownloadError extends Error {
+  constructor(public readonly statusCode: number) {
+    super('Voice download failed');
+    this.name = 'VoiceDownloadError';
+  }
+}
+
 export const readVoiceBytes = async (
   response: Response,
 ): Promise<Uint8Array> => {
-  if (!response.ok || !response.body) throw new Error('Voice download failed');
+  if (!response.ok || !response.body)
+    throw new VoiceDownloadError(response.status);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;

@@ -1,12 +1,17 @@
 import { transcribeVoice } from '../clients/ai.js';
 import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
-import { panelReply } from '../services/chatPanel.js';
+import {
+  beginPanel,
+  panelReply,
+  removePanelMessage,
+} from '../services/chatPanel.js';
 import {
   MAX_VOICE_BYTES,
   MAX_VOICE_SECONDS,
   readVoiceBytes,
 } from '../services/voiceDownload.js';
+import { type VoiceStage, voiceError } from '../services/voiceError.js';
 import { processBrainInput } from './brain.js';
 import { removeByVoice } from './removeSelected.js';
 
@@ -34,9 +39,19 @@ export const voiceMessage = async (ctx: BotContext) => {
       'Голосовые пока работают с AI_PROVIDER=gemini. Можно добавить дела через /brain текстом.',
     );
   }
+  let stage: VoiceStage = 'download';
+  let statusId: number | undefined;
+  const clearStatus = async () => {
+    if (statusId !== undefined) {
+      await removePanelMessage(ctx, statusId);
+      statusId = undefined;
+    }
+    beginPanel(ctx);
+  };
   try {
     ctx.chatAction = 'typing';
-    await panelReply(ctx, '🎙️ Расшифровываю голосовое и разбираю дела…');
+    const status = await panelReply(ctx, '🎙️ Расшифровываю голосовое…');
+    if (status && typeof status === 'object') statusId = status.message_id;
     const file = await ctx.api.getFile(voice.file_id);
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!file.file_path || !token) throw new Error('Voice file unavailable');
@@ -44,11 +59,14 @@ export const voiceMessage = async (ctx: BotContext) => {
       `https://api.telegram.org/file/bot${token}/${file.file_path}`,
       { signal: AbortSignal.timeout(30_000) },
     );
-    const transcript = await transcribeVoice(await readVoiceBytes(response));
+    const audio = await readVoiceBytes(response);
+    stage = 'transcribe';
+    const transcript = await transcribeVoice(audio);
+    await clearStatus();
     if (!transcript)
       return await panelReply(
         ctx,
-        'Не удалось разобрать речь. Попробуй записать ещё раз или используй /brain.',
+        'Не удалось разобрать речь. Голосовое осталось в чате. Можно переслать его повторно или написать дела текстом.',
       );
     if (transcript.length > 6000)
       return await panelReply(
@@ -62,21 +80,22 @@ export const voiceMessage = async (ctx: BotContext) => {
         `📝 Расшифровка:\n${transcript.slice(offset, offset + 3000)}`,
       );
     }
+    stage = 'tasks';
     if (/(удал|убер|убра|исключ|delete|remove)/i.test(transcript)) {
       await removeByVoice(ctx, transcript);
     } else {
       await processBrainInput(ctx, transcript);
     }
-  } catch {
-    // Download errors can contain a Telegram token in their URL: never log them.
+  } catch (error) {
+    await clearStatus();
+    const failure = voiceError(error, stage);
     logger.warnWithContext({
       op: 'VOICE',
-      message: 'Voice processing failed',
+      message: failure.diagnostic,
       userId: ctx.from?.id,
     });
-    await panelReply(
-      ctx,
-      '❌ Не удалось обработать ГС. Попробуй короткое сообщение или /brain текстом.',
-    );
+    await panelReply(ctx, failure.text);
+  } finally {
+    await clearStatus();
   }
 };

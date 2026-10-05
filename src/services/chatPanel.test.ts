@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test';
 import type { BotContext } from '../middlewares/session.js';
-import { beginPanel, panelReply, removeVoiceInput } from './chatPanel.js';
+import {
+  beginPanel,
+  panelReply,
+  removePanelMessage,
+  removeVoiceInput,
+} from './chatPanel.js';
 
 const fixture = (chat: number) => {
   const calls: Array<{ method: string; id?: number; text?: string }> = [];
@@ -102,4 +107,19 @@ test('errors and original voice survive failures; successful preview can remove 
   expect(
     f.calls.some((call) => call.method === 'delete' && call.id === 51),
   ).toBe(true);
+});
+
+test('status cleanup preserves the voice and a newer menu', async () => {
+  const f = fixture(8005);
+  const voice = f.context('voice');
+  await panelReply(voice, 'Working');
+  await panelReply(f.context(), 'New menu');
+  await removePanelMessage(voice, 100);
+  await panelReply(f.context(), 'Next menu');
+  expect(
+    f.calls.filter((call) => call.method === 'delete').map((call) => call.id),
+  ).toEqual([100, 100, 101]);
+  expect(
+    f.calls.some((call) => call.method === 'delete' && call.id === 51),
+  ).toBe(false);
 });

@@ -14,6 +14,21 @@ export const beginPanel = (ctx: BotContext) => {
   started.delete(ctx);
 };
 
+// Remove only this operation's status, never a newer menu or unrelated history.
+export const removePanelMessage = async (ctx: BotContext, id: number) => {
+  if (ctx.chat?.type !== 'private') return;
+  const panel = panels.get(ctx.chat.id);
+  if (panel) {
+    panel.ids = panel.ids.filter((messageId) => messageId !== id);
+    if (!panel.ids.length) panels.delete(ctx.chat.id);
+  }
+  try {
+    await ctx.api.deleteMessage(ctx.chat.id, id);
+  } catch {
+    /* Best effort: deleted or inaccessible status must not fail the operation. */
+  }
+};
+
 // Only explicitly routed UI messages participate. Reminders and errors stay in history.
 export const panelReply = async (
   ctx: BotContext,
