@@ -27,6 +27,7 @@ test('temporary failures respect the provider delay without exposing errors', ()
   });
   expect(result.temporary).toBe(true);
   expect(result.delay).toBe(125000);
+  expect(result.diagnostic).toBe('status=503 kind=temporary');
   expect(JSON.stringify(result)).not.toContain('SECRET');
   expect(
     aiFailure({
@@ -34,4 +35,16 @@ test('temporary failures respect the provider delay without exposing errors', ()
       data: { error: { code: 'rate_limit_exceeded' } },
     }).temporary,
   ).toBe(true);
+});
+
+test('diagnostics classify API failures without echoing provider messages', () => {
+  const failure = aiFailure({
+    statusCode: 400,
+    data: { error: { message: 'Invalid schema SECRET', code: 'SECRET' } },
+  });
+  expect(failure.diagnostic).toBe('status=400 kind=schema');
+  expect(JSON.stringify(failure)).not.toContain('SECRET');
+  expect(aiFailure({ statusCode: 401 }).diagnostic).toBe(
+    'status=401 kind=authentication',
+  );
 });

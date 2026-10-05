@@ -87,6 +87,11 @@ export const pausePendingInputs = (ctx: BotContext) => {
 
 const showFailure = async (ctx: BotContext, job: Job, error: unknown) => {
   const failure = aiFailure(error);
+  logger.warnWithContext({
+    op: 'INPUT_RETRY',
+    userId: ctx.from?.id,
+    message: failure.diagnostic,
+  });
   await panelReply(
     ctx,
     `❌ ${failure.reason}\nТекст сохранён на сервере на 24 часа. ${job.next ? 'Повторю разбор позже; повторно отправлять ГС не нужно.' : 'Автоповторы остановлены. После исправления можно повторить кнопкой или /retry.'}`,

@@ -40,7 +40,29 @@ export const aiFailure = (error: unknown) => {
       /TimeoutError|AbortError/.test(String(value.name)));
   const headers = value.responseHeaders as Record<string, string> | undefined;
   const retryAfter = Number(headers?.['retry-after']);
+  const providerMessage =
+    detail && typeof detail === 'object' && 'message' in detail
+      ? String(detail.message)
+      : message;
+  const kind = billing
+    ? 'billing'
+    : status === 401 || code === 'invalid_api_key'
+      ? 'authentication'
+      : status === 403
+        ? 'access'
+        : code === 'model_not_found' || status === 404
+          ? 'model'
+          : /schema|response_format/i.test(providerMessage)
+            ? 'schema'
+            : /LoadAPIKeyError|API key.*missing|API key.*not set/i.test(
+                  `${value.name} ${message}`,
+                )
+              ? 'missing_key'
+              : temporary
+                ? 'temporary'
+                : 'unknown';
   return {
+    diagnostic: `status=${Number.isInteger(status) && status >= 100 && status <= 599 ? status : 'none'} kind=${kind}`,
     temporary,
     billing,
     delay:
