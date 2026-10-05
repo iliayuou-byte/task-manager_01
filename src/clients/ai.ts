@@ -87,7 +87,8 @@ const getModel = async () => {
         );
       }
       const openai = createOpenAI({
-        baseURL: process.env.OPENAI_BASE_URL,
+        baseURL:
+          process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1',
         apiKey,
       });
       return openai.chat(model);
