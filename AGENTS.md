@@ -164,3 +164,7 @@ src/
 ### Draft category review
 
 `commands/brain.ts` previews AI category proposals as unreviewed and supports sequential review or paginated selection before storage. Draft indices stay stable across category changes (do not renumber by quadrant). Manual selections call `setQuadrant` and persist `priorityLocked`; callbacks enforce owner, chat, expiry and saving state. Review requires no extra AI requests.
+
+### Completion picker continuity
+
+`showCompletePicker` refreshes the pending-task keyboard after each confirmed save, clamping pagination when the last page becomes empty. Completion moves the task from uncompleted to completed. `panelNotice` sends a tracked inline Back notice without replacing the persistent keyboard or its action mapping; later screen cleanup removes the notice with its picker. Task-card completion similarly returns to the remaining scoped task picker.

@@ -2,7 +2,7 @@ import { type Composer, InlineKeyboard } from 'grammy';
 import type { Task, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
-import { panelReply } from '../services/chatPanel.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { markTaskCompleted, promptCalendarAction } from '../utils/index.js';
@@ -143,7 +143,13 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
       const task = tasks[idx];
 
       if (command === 'complete') {
-        await handleComplete(ctx, taskData, metadata, task);
+        await handleComplete(
+          ctx,
+          taskData,
+          metadata,
+          task,
+          Math.floor(idx / TASKS_PER_PAGE),
+        );
       } else if (command === 'remove') {
         await handleRemove(ctx, taskData, metadata, taskType, idx, task);
       } else if (command === 'edit') {
@@ -161,10 +167,39 @@ const handleComplete = async (
   taskData: TaskData,
   metadata: { timezone?: string },
   task: Task,
+  page: number,
 ) => {
   markTaskCompleted(task, metadata.timezone);
-  await saveTasks(taskData, metadata);
-  await panelReply(ctx, `✅ Completed: ${task.name}`);
+  taskData.uncompleted = taskData.uncompleted.filter(
+    (candidate) => candidate !== task,
+  );
+  taskData.completed.unshift(task);
+  if (!(await saveTasks(taskData, metadata)))
+    throw new Error('Storage did not confirm save');
+  await showCompletePicker(ctx, taskData.uncompleted, page);
+  await panelNotice(ctx, `✅ Выполнено: ${task.name}`, {
+    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+  });
+};
+
+export const showCompletePicker = async (
+  ctx: BotContext,
+  tasks: Task[],
+  page = 0,
+) => {
+  const lastPage = Math.max(0, Math.ceil(tasks.length / TASKS_PER_PAGE) - 1);
+  return panelReply(
+    ctx,
+    tasks.length ? 'Выбери дело, которое выполнено:' : '✅ Все дела выполнены.',
+    {
+      reply_markup: generateTaskPickerKeyboard(
+        tasks,
+        'complete',
+        'u',
+        Math.min(page, lastPage),
+      ),
+    },
+  );
 };
 
 const handleRemove = async (

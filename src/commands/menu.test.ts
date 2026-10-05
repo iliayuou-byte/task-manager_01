@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { Bot } from 'grammy';
+import { registerTaskPickerAction } from '../actions/taskPicker.js';
 import * as aiClient from '../clients/ai.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
@@ -12,6 +13,7 @@ import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
 import { registerBrainActions } from './brain.js';
+import { completeCommand } from './complete.js';
 import { registerMenu } from './menu.js';
 import { registerSelectedRemoval } from './removeSelected.js';
 
@@ -85,6 +87,8 @@ const fixture = (user: number) => {
   registerMenu(bot);
   registerBrainActions(bot);
   registerSelectedRemoval(bot);
+  registerTaskPickerAction(bot);
+  bot.command('complete', completeCommand);
   bot.use(editSceneComposer);
   const from = { id: user, is_bot: false, first_name: 'User' };
   const message = {
@@ -98,7 +102,19 @@ const fixture = (user: number) => {
   const text = async (value: string) => {
     await bot.handleUpdate({
       update_id: update++,
-      message: { ...message, text: value },
+      message: {
+        ...message,
+        text: value,
+        entities: value.startsWith('/')
+          ? [
+              {
+                type: 'bot_command',
+                offset: 0,
+                length: value.split(' ')[0].length,
+              },
+            ]
+          : undefined,
+      },
     });
   };
   const click = async (value: string) => {
@@ -487,4 +503,68 @@ test('reminder deletion keyboard identifies the exact time instead of identical 
   expect(f.labels()).toContain('🗑 19:00');
   await f.tap('🗑 09:00');
   expect(f.data().metadata.reminder_times).toBe('19:00');
+});
+
+test('complete picker remains open across consecutive completions, with inline Back notice', async () => {
+  const f = fixture(540);
+  await f.text('/complete');
+  await f.tap('Первое');
+  expect(f.labels()).toContain('Второе');
+  expect(f.labels()).not.toContain('Первое');
+  const notice = [...f.calls]
+    .reverse()
+    .find((call) => String(call.text).includes('Выполнено: Первое'));
+  expect(notice?.reply_markup).toEqual({
+    inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'menu:home' }]],
+  });
+  expect(f.data().taskData.completed).toHaveLength(1);
+  await f.tap('Второе');
+  expect(f.data().taskData.uncompleted).toHaveLength(0);
+  expect(f.data().taskData.completed).toHaveLength(2);
+  expect(f.labels()).not.toContain('Второе');
+  await f.click('menu:home');
+  expect(f.labels()).toContain(MENU.all);
+});
+
+test('task card completion returns to remaining task picker instead of main menu', async () => {
+  const f = fixture(541);
+  await f.text(MENU.all);
+  await f.tap('1. Первое');
+  await f.tap('Готово');
+  expect(f.labels()).toContain('1. Второе');
+  expect(f.labels()).not.toContain(MENU.add);
+  await f.tap('1. Второе');
+  await f.tap('Готово');
+  expect(f.data().taskData.uncompleted).toHaveLength(0);
+});
+
+test('completion on the last picker page returns to a valid remaining page', async () => {
+  const f = fixture(542);
+  f.data().taskData.uncompleted = Array.from({ length: 9 }, (_, index) => ({
+    name: `Дело ${index + 1}`,
+    completed: false,
+    tags: [],
+  }));
+  await f.text('/complete');
+  await f.tap('Next');
+  await f.tap('Дело 9');
+  expect(f.labels()).toContain('Дело 1');
+  expect(f.labels()).not.toContain('Дело 9');
+  expect(f.data().taskData.uncompleted).toHaveLength(8);
+});
+
+test('named completion keeps the picker and removes its old notice on navigation', async () => {
+  const f = fixture(543);
+  await f.text('/complete Первое');
+  expect(f.labels()).toContain('Второе');
+  const notice = [...f.calls]
+    .reverse()
+    .find((call) => String(call.text).includes('Выполнено: Первое'));
+  const noticeId = f.calls.indexOf(notice!) + 1;
+  await f.tap('Второе');
+  expect(
+    f.calls.some(
+      (call) => call.method === 'deleteMessage' && call.message_id === noticeId,
+    ),
+  ).toBe(true);
 });

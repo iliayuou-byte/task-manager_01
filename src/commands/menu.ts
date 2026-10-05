@@ -4,7 +4,7 @@ import { type Composer, InlineKeyboard } from 'grammy';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
-import { panelReply } from '../services/chatPanel.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { getQuadrant, QUADRANTS, setQuadrant } from '../services/eisenhower.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
@@ -457,10 +457,17 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         const live = taskData.uncompleted.splice(index, 1)[0];
         markTaskCompleted(live, metadata.timezone);
         taskData.completed.unshift(live);
-        await saveTasks(taskData, metadata);
-        newState(ctx);
-        return await panelReply(ctx, `✅ Готово: ${task.name}`, {
-          reply_markup: mainKeyboard(),
+        if (!(await saveTasks(taskData, metadata)))
+          throw new Error('Storage did not confirm save');
+        const remaining = (state.tasks ?? []).filter(
+          (candidate) => taskFingerprint(candidate) !== taskFingerprint(task),
+        );
+        const refreshed = newState(ctx);
+        refreshed.tasks = remaining;
+        rememberTaskNumbers(ctx.from.id, ctx.chat!.id, remaining);
+        await showPicker(ctx, refreshed, 0);
+        return await panelNotice(ctx, `✅ Готово: ${task.name}`, {
+          reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
         });
       }
       if (action === 'lock') {

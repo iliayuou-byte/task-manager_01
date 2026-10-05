@@ -14,6 +14,23 @@ export const beginPanel = (ctx: BotContext) => {
   started.delete(ctx);
 };
 
+// An inline notice can sit above the persistent picker without replacing it.
+export const panelNotice = async (
+  ctx: BotContext,
+  text: string,
+  options?: ReplyOptions,
+) => {
+  const message = await ctx.reply(text, options);
+  if (ctx.chat?.type === 'private') {
+    const panel = panels.get(ctx.chat.id);
+    if (panel) {
+      panel.ids.push(message.message_id);
+      panel.updated = Date.now();
+    }
+  }
+  return message;
+};
+
 // Remove only this operation's status, never a newer menu or unrelated history.
 export const removePanelMessage = async (ctx: BotContext, id: number) => {
   if (ctx.chat?.type !== 'private') return;

@@ -1,7 +1,8 @@
-import { generateTaskPickerKeyboard } from '../actions/taskPicker.js';
+import { InlineKeyboard } from 'grammy';
+import { showCompletePicker } from '../actions/taskPicker.js';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
-import { panelReply } from '../services/chatPanel.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -30,14 +31,7 @@ export const completeCommand = async (ctx: BotContext) => {
       const { taskData } = await queryTasks();
       if (taskData.uncompleted.length === 0)
         return panelReply(ctx, NO_TASK_MESSAGE);
-      return panelReply(ctx, 'Select a task to complete:', {
-        reply_markup: generateTaskPickerKeyboard(
-          taskData.uncompleted,
-          'complete',
-          'u',
-          0,
-        ),
-      });
+      return showCompletePicker(ctx, taskData.uncompleted);
     }
 
     const { taskData, metadata } = await queryTasks();
@@ -47,11 +41,17 @@ export const completeCommand = async (ctx: BotContext) => {
     }
 
     markTaskCompleted(taskData.uncompleted[taskIdx], metadata.timezone);
-    await saveTasks(taskData, metadata);
+    const task = taskData.uncompleted.splice(taskIdx, 1)[0];
+    taskData.completed.unshift(task);
+    if (!(await saveTasks(taskData, metadata)))
+      throw new Error('Storage did not confirm save');
 
-    panelReply(ctx, `✅ Completed: ${arg}`);
+    await showCompletePicker(ctx, taskData.uncompleted);
+    await panelNotice(ctx, `✅ Выполнено: ${task.name}`, {
+      reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+    });
   } catch (error) {
-    logAndReplyError(
+    await logAndReplyError(
       ctx,
       Command.COMPLETE,
       error,
