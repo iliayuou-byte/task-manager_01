@@ -23,6 +23,7 @@ import {
   settingsKeyboard,
   timeKeyboard,
 } from '../views/menuView.js';
+import { openAssistant } from './assistant.js';
 import { cancelBrainDrafts, processBrainInput } from './brain.js';
 import { showNow } from './now.js';
 import { cancelRemovalDrafts, previewRemoval } from './removeSelected.js';
@@ -60,6 +61,7 @@ export const clearMenuInput = (ctx: BotContext) => {
 };
 
 export const menuCommand = async (ctx: BotContext) => {
+  ctx.session.assistant = undefined;
   cancelBrainDrafts(ctx);
   cancelRemovalDrafts(ctx);
   newState(ctx);
@@ -247,10 +249,15 @@ export const registerMenu = (composer: Composer<BotContext>) => {
     const text = ctx.message.text.trim();
     try {
       if (Object.values(MENU).some((label) => label === text)) {
+        ctx.session.assistant = undefined;
         ctx.session.awaitingAdd = undefined;
         ctx.session.editScene = undefined;
         if (text === MENU.home) return await menuCommand(ctx);
         if (text === MENU.back) return await backToTask(ctx);
+        if (text === MENU.chat) {
+          newState(ctx);
+          return await openAssistant(ctx);
+        }
         if (text === MENU.settings) {
           newState(ctx);
           return await panelReply(ctx, '⚙️ Настройки', {
@@ -302,6 +309,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       return;
     }
     const [action, id, value] = ctx.match[1].split(':');
+    ctx.session.assistant = undefined;
     const state = states.get(ctx.from.id);
     if (
       id &&

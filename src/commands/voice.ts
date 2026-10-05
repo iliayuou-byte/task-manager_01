@@ -12,6 +12,7 @@ import {
   readVoiceBytes,
 } from '../services/voiceDownload.js';
 import { type VoiceStage, voiceError } from '../services/voiceError.js';
+import { processAssistantInput } from './assistant.js';
 import { processBrainInput } from './brain.js';
 import { removeByVoice } from './removeSelected.js';
 
@@ -43,6 +44,7 @@ export const voiceMessage = async (ctx: BotContext) => {
     );
   }
   let stage: VoiceStage = 'download';
+  const assistantState = ctx.session?.assistant;
   let statusId: number | undefined;
   const clearStatus = async () => {
     if (statusId !== undefined) {
@@ -66,6 +68,7 @@ export const voiceMessage = async (ctx: BotContext) => {
     stage = 'transcribe';
     const transcript = await transcribeVoice(audio);
     await clearStatus();
+    if (assistantState && ctx.session.assistant !== assistantState) return;
     if (!transcript)
       return await panelReply(
         ctx,
@@ -84,6 +87,7 @@ export const voiceMessage = async (ctx: BotContext) => {
       );
     }
     stage = 'tasks';
+    if (assistantState) return await processAssistantInput(ctx, transcript);
     if (/(удал|убер|убра|исключ|delete|remove)/i.test(transcript)) {
       await removeByVoice(ctx, transcript);
     } else {

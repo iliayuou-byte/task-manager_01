@@ -16,6 +16,12 @@ export interface EditSceneState {
 // --- Session types ---
 
 export interface SessionData {
+  assistant?: {
+    id: string;
+    expires: number;
+    busy?: boolean;
+    suggestion?: { mode: 'add' | 'remove'; input: string };
+  };
   editScene?: EditSceneState;
   awaitingAdd?: boolean;
 }

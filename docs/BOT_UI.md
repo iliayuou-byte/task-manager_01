@@ -6,6 +6,8 @@
 | --- | --- |
 | Названия кнопок главного меню | `src/views/menuView.ts`, объект `MENU` |
 | Приветствие, карточка дела, тексты настроек | `src/commands/menu.ts` |
+| Экран разговора, очистка памяти, предложение черновика | `src/commands/assistant.ts` |
+| Характер разговорного ИИ | `.env`: `ASSISTANT_STYLE`; `src/clients/ai.ts`: `generateAssistantReply` |
 | Заголовки четырёх разделов | `src/services/eisenhower.ts`, массив `QUADRANTS` |
 | Строки списка дел, даты, теги, разделители | `src/views/eisenhowerView.ts` |
 | Предпросмотр нового списка и вопросы о категории | `src/commands/brain.ts` |

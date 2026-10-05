@@ -8,6 +8,7 @@ export const MENU = {
   done: '✅ Выполнено',
   remove: '🗑 Удалить',
   settings: '⚙️ Настройки',
+  chat: '💬 Поговорить',
   home: '🏠 Меню',
   back: '⬅️ Назад',
 } as const;
@@ -21,6 +22,7 @@ export const mainKeyboard = () =>
     .text(MENU.now)
     .row()
     .text(MENU.settings)
+    .text(MENU.chat)
     .resized()
     .persistent();
 

@@ -6,6 +6,7 @@ import { registerTaskPickerAction } from './actions/taskPicker.js';
 import { aboutCommand } from './commands/about.js';
 import { addCommand, addSceneComposer } from './commands/add.js';
 import { registerAiSettings } from './commands/aiSettings.js';
+import { registerAssistant } from './commands/assistant.js';
 import { brainCommand, registerBrainActions } from './commands/brain.js';
 import { clearCompletedCommand } from './commands/clearCompleted.js';
 import { completeCommand } from './commands/complete.js';
@@ -71,6 +72,16 @@ infoComposer.command(Command.WHATSNEW, whatsnewCommand);
 export const opComposer = new Composer<BotContext>();
 
 opComposer.use(allowlist);
+opComposer.use(async (ctx, next) => {
+  if (
+    (ctx.message?.text?.startsWith('/') &&
+      !/^\/talk(?:@\w+)?(?:\s|$)/.test(ctx.message.text)) ||
+    (ctx.callbackQuery?.data &&
+      !ctx.callbackQuery.data.startsWith('assistant:'))
+  )
+    ctx.session.assistant = undefined;
+  return next();
+});
 registerContextKeyboard(opComposer);
 opComposer.command(Command.START, menuCommand);
 opComposer.command(Command.MENU, menuCommand);
@@ -100,7 +111,10 @@ opComposer.on('message:text', async (ctx, next) => {
   const match = ctx.message.text
     .trim()
     .match(/^(?:удали|убери|remove|delete)\s+(\d+(?:[\s,]+\d+)*)[.!]?$/i);
-  if (match) return await removeByNumbers(ctx, match[1]);
+  if (match) {
+    ctx.session.assistant = undefined;
+    return await removeByNumbers(ctx, match[1]);
+  }
   return next();
 });
 opComposer.command(Command.SORT, sortCommand);
@@ -110,6 +124,7 @@ opComposer.command(Command.SEARCH, searchCommand);
 registerSortAction(opComposer);
 registerCalendarAction(opComposer);
 registerTaskPickerAction(opComposer);
+registerAssistant(opComposer);
 
 opComposer.callbackQuery(/^tz_(.+)$/, async (ctx) => {
   const value = ctx.match[1];
