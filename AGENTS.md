@@ -182,3 +182,13 @@ src/
 ### Conversational assistant
 
 `commands/assistant.ts` and `/talk` open a private-chat conversation with live task context. `services/assistantHistory.ts` stores at most six exchanges per owner/chat in an ignored runtime file, expiring after seven days. The model returns discussion or a suggested add/remove input, never executes writes. Suggested operations go through existing confirmation drafts. Menu/command navigation cancels late responses; history reset must leave tasks intact. Voice routes to this mode only while active. Log only safe diagnostics. See `docs/SHARED_ASSISTANT.md` for tone settings and shared GitHub access from ChatGPT; this does not synchronize ChatGPT account history.
+
+### User profiles
+
+`services/userScope.ts` uses AsyncLocalStorage around allowlisted private updates.
+Explicit `BOT_OWNER_ID` retains the owner's FILE_PATH; other users resolve to sibling
+users/<id>.md files. Never mutate process.env for request routing. Missing storage
+scope fails closed in profile mode. Wrap every background task (reminders, retries,
+GitHub notifications) with runForUser. Multiple allowlisted users require an explicit
+owner, and profile mode rejects Notion. Google Calendar is owner-only at the client
+operation boundary; do not expose its prompts to testers.

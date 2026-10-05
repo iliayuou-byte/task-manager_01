@@ -1,12 +1,12 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Bot } from 'grammy';
-import { ALLOWED_USERS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
 import { rememberTaskNumbers } from './taskNumbers.js';
+import { profileUsers, runForUser } from './userScope.js';
 
 export const parseReminderTimes = (input: string): string[] => {
   if (input === 'off') return [];
@@ -42,54 +42,67 @@ export const dueReminderSlot = (
     );
 };
 
+const checkUserReminders = async (
+  bot: Bot<BotContext>,
+  userId: number,
+  now: Date,
+) => {
+  const { taskData, metadata } = await queryTasks();
+  if (
+    !metadata.timezone ||
+    !metadata.reminder_times ||
+    metadata.reminder_times === 'off'
+  )
+    return;
+  const slot = dueReminderSlot(
+    parseReminderTimes(metadata.reminder_times),
+    now,
+    metadata.timezone,
+    metadata.reminder_last_sent,
+  );
+  if (!slot) return;
+  const date = slot.slice(0, 10);
+  const tasks = taskData.uncompleted.filter(
+    (task) => !task.completed && (!task.date || task.date <= date),
+  );
+  const lines = tasks.length
+    ? [
+        `🔔 Напоминание · ${date}`,
+        '',
+        ...matrixLines(tasks),
+        '/complete — отметить выполненное',
+      ]
+    : [
+        '🔔 На сегодня незавершённых дел нет. Можно добавить через /brain или ГС.',
+      ];
+  for (const message of splitMessages(lines))
+    await bot.api.sendMessage(userId, message);
+  rememberTaskNumbers(userId, userId, tasks);
+  // Re-read after network sends so task changes during delivery are preserved.
+  const latest = await queryTasks();
+  latest.metadata.reminder_last_sent = slot;
+  await saveTasks(latest.taskData, latest.metadata);
+};
+
 let running = false;
 export const checkReminders = async (
   bot: Bot<BotContext>,
   now = new Date(),
 ) => {
-  if (running || !ALLOWED_USERS[0]) return;
+  if (running) return;
   running = true;
   try {
-    const { taskData, metadata } = await queryTasks();
-    if (
-      !metadata.timezone ||
-      !metadata.reminder_times ||
-      metadata.reminder_times === 'off'
-    )
-      return;
-    const slot = dueReminderSlot(
-      parseReminderTimes(metadata.reminder_times),
-      now,
-      metadata.timezone,
-      metadata.reminder_last_sent,
-    );
-    if (!slot) return;
-    const date = slot.slice(0, 10);
-    const tasks = taskData.uncompleted.filter(
-      (task) => !task.completed && (!task.date || task.date <= date),
-    );
-    const lines = tasks.length
-      ? [
-          `🔔 Напоминание · ${date}`,
-          '',
-          ...matrixLines(tasks),
-          '/complete — отметить выполненное',
-        ]
-      : [
-          '🔔 На сегодня незавершённых дел нет. Можно добавить через /brain или ГС.',
-        ];
-    for (const message of splitMessages(lines))
-      await bot.api.sendMessage(ALLOWED_USERS[0], message);
-    rememberTaskNumbers(ALLOWED_USERS[0], ALLOWED_USERS[0], tasks);
-    // Re-read after network sends so task changes during delivery are preserved.
-    const latest = await queryTasks();
-    latest.metadata.reminder_last_sent = slot;
-    await saveTasks(latest.taskData, latest.metadata);
-  } catch {
-    logger.warnWithContext({
-      op: 'REMINDERS',
-      message: 'Could not check or send reminders',
-    });
+    for (const userId of profileUsers()) {
+      try {
+        await runForUser(userId, () => checkUserReminders(bot, userId, now));
+      } catch {
+        logger.warnWithContext({
+          userId,
+          op: 'REMINDERS',
+          message: 'Could not check or send reminders',
+        });
+      }
+    }
   } finally {
     running = false;
   }

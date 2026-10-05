@@ -39,9 +39,11 @@ import { editSceneComposer, enterEditScene } from './scenes/editTaskScene.js';
 import { panelReply } from './services/chatPanel.js';
 import { registerContextKeyboard } from './services/contextKeyboard.js';
 import { registerPendingInputs } from './services/pendingInputs.js';
+import { profileOwner, runForUser } from './services/userScope.js';
 import { START_WORDING } from './views/generalView.js';
 import { mainKeyboard } from './views/menuView.js';
 
+profileOwner();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
 if (!token) {
@@ -72,6 +74,14 @@ infoComposer.command(Command.WHATSNEW, whatsnewCommand);
 export const opComposer = new Composer<BotContext>();
 
 opComposer.use(allowlist);
+opComposer.use(async (ctx, next) => {
+  if (process.env.BOT_OWNER_ID && ctx.chat?.type !== 'private') {
+    await ctx.reply('Профили доступны только в личном чате с ботом.');
+    return;
+  }
+  if (!ctx.from) return;
+  return runForUser(ctx.from.id, next);
+});
 opComposer.use(async (ctx, next) => {
   if (
     (ctx.message?.text?.startsWith('/') &&

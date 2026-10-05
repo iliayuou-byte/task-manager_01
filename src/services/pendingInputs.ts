@@ -7,6 +7,7 @@ import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
 import { aiFailure } from './aiFailure.js';
 import { panelReply } from './chatPanel.js';
+import { runForUser } from './userScope.js';
 
 const jobSchema = z.object({
   id: z.string(),
@@ -243,7 +244,7 @@ export const retryPendingInputsOnce = async (bot: Bot<BotContext>) => {
         bot.botInfo,
       ) as BotContext;
       ctx.session = {};
-      await runJob(ctx, job);
+      await runForUser(job.owner, () => runJob(ctx, job));
     }
   } catch {
     logger.warnWithContext({

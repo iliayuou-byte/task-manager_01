@@ -8,6 +8,7 @@ import {
   setPendingCalendarOps,
 } from '../middlewares/session.js';
 import { panelNotice, panelReply } from '../services/chatPanel.js';
+import { canUseOwnerCalendar } from '../services/userScope.js';
 import { navigationKeyboard } from '../views/menuView.js';
 
 // Extract argument from command text
@@ -280,6 +281,7 @@ export const promptCalendarAction = async (
   ops: CalendarOpSession[],
   keepKeyboard = false,
 ) => {
+  if (!canUseOwnerCalendar()) return;
   setPendingCalendarOps(ctx.from!.id, ops);
   await (keepKeyboard ? panelNotice : panelReply)(ctx, message, {
     reply_markup: calendarKeyboard,

@@ -6,6 +6,7 @@ import { GoogleAuth } from 'google-auth-library';
 import { IS_PROD } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
+import { canUseOwnerCalendar } from '../services/userScope.js';
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 
@@ -90,6 +91,8 @@ class GoogleCalendarService {
   }
 
   async createEvent(task: Task, timezone: string): Promise<string | undefined> {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
     if (!this.calendar) {
       logger.warnWithContext({
         message: 'Google Calendar not configured, skipping event creation',
@@ -138,6 +141,8 @@ class GoogleCalendarService {
     task: Task,
     timezone: string,
   ): Promise<string | undefined> {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
     if (!this.calendar) {
       return;
     }
@@ -173,6 +178,8 @@ class GoogleCalendarService {
   }
 
   async deleteEvent(eventId: string): Promise<boolean> {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
     if (!this.calendar) {
       return false;
     }
