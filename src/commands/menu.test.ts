@@ -311,6 +311,78 @@ test('brain preview back cancels draft and restores add prompt', async () => {
   expect(generation).toHaveBeenCalledTimes(1);
 });
 
+test('brain sequential category review preserves numbers, locks choices and saves only on confirmation', async () => {
+  const f = fixture(530);
+  const generation = spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+    {
+      name: 'Собрать вещи',
+      completed: false,
+      tags: [],
+      important: true,
+      urgent: false,
+    },
+    {
+      name: 'Тренировка',
+      completed: false,
+      tags: [],
+      important: false,
+      urgent: false,
+    },
+  ]);
+  spies.push(generation);
+  await f.text(MENU.add);
+  await f.text('Собрать вещи, тренировка');
+  await f.tap('Разобрать по одному');
+  expect(
+    String([...f.calls].reverse().find((call) => call.text)?.text),
+  ).toContain('Дело 1 из 2: Собрать вещи');
+  await f.tap('Неважно, но срочно');
+  expect(
+    String([...f.calls].reverse().find((call) => call.text)?.text),
+  ).toContain('Дело 2 из 2: Тренировка');
+  await f.tap('Важно, не срочно');
+  const preview = String(
+    [...f.calls].reverse().find((call) => call.text)?.text,
+  );
+  expect(preview).toContain('1. ✅ Собрать вещи');
+  expect(preview).toContain('2. ✅ Тренировка');
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.tap('Сохранить');
+  const tasks = f.data().taskData.uncompleted;
+  expect(tasks.find((task) => task.name === 'Собрать вещи')).toMatchObject({
+    important: false,
+    urgent: true,
+    priorityLocked: true,
+  });
+  expect(tasks.find((task) => task.name === 'Тренировка')).toMatchObject({
+    important: true,
+    urgent: false,
+    priorityLocked: true,
+  });
+  expect(generation).toHaveBeenCalledTimes(1);
+});
+
+test('individual draft review returns through picker and Home invalidates old category and save actions', async () => {
+  const f = fixture(531);
+  spies.push(
+    spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+      { name: 'Мусор', completed: false, tags: [] },
+    ]),
+  );
+  await f.text(MENU.add);
+  await f.text('Мусор');
+  const save = f.button('Сохранить');
+  await f.tap('Изменить категорию');
+  await f.tap('1. Мусор');
+  const category = f.button('Неважно, но срочно');
+  await f.tap('Назад');
+  expect(f.labels()).toContain('1. Мусор');
+  await f.tap('🏠 Меню');
+  await f.click(category);
+  await f.click(save);
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+});
+
 test('edit input back restores fields and home exits the scene', async () => {
   const f = fixture(510);
   await f.text(MENU.all);

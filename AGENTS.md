@@ -160,3 +160,7 @@ src/
 ### Voice failures
 
 `commands/voice.ts` removes its own transient status on every exit. `services/voiceError.ts` exposes only fixed stage/code/status diagnostics, never raw download errors (URLs can contain Telegram tokens). Keep the original voice on failures; forwarding it retries without recording again. `removePanelMessage` removes a specific status without deleting a newer menu.
+
+### Draft category review
+
+`commands/brain.ts` previews AI category proposals as unreviewed and supports sequential review or paginated selection before storage. Draft indices stay stable across category changes (do not renumber by quadrant). Manual selections call `setQuadrant` and persist `priorityLocked`; callbacks enforce owner, chat, expiry and saving state. Review requires no extra AI requests.
