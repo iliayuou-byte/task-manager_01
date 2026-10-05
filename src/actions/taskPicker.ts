@@ -2,6 +2,7 @@ import { type Composer, InlineKeyboard } from 'grammy';
 import type { Task, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { markTaskCompleted, promptCalendarAction } from '../utils/index.js';
@@ -98,7 +99,7 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
 
       // Cancel
       if (action === 'cancel') {
-        await ctx.editMessageText(`❌ ${capitalize(command)} cancelled.`);
+        await panelReply(ctx, `❌ ${capitalize(command)} cancelled.`);
         return;
       }
 
@@ -119,9 +120,7 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
           );
         }
 
-        await ctx.editMessageReplyMarkup({
-          reply_markup: keyboard,
-        });
+        await panelReply(ctx, 'Выбери дело:', { reply_markup: keyboard });
         return;
       }
 
@@ -134,7 +133,8 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
         taskType === 'u' ? taskData.uncompleted : taskData.completed;
 
       if (idx < 0 || idx >= tasks.length) {
-        await ctx.editMessageText(
+        await panelReply(
+          ctx,
           '⚠️ Task list has changed. Please try the command again.',
         );
         return;
@@ -147,7 +147,7 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
       } else if (command === 'remove') {
         await handleRemove(ctx, taskData, metadata, taskType, idx, task);
       } else if (command === 'edit') {
-        await ctx.editMessageText(`✏️ Editing: ${task.name}`);
+        await panelReply(ctx, `✏️ Editing: ${task.name}`);
         await enterEditScene(ctx, idx);
       }
     },
@@ -164,7 +164,7 @@ const handleComplete = async (
 ) => {
   markTaskCompleted(task, metadata.timezone);
   await saveTasks(taskData, metadata);
-  await ctx.editMessageText(`✅ Completed: ${task.name}`);
+  await panelReply(ctx, `✅ Completed: ${task.name}`);
 };
 
 const handleRemove = async (
@@ -180,7 +180,7 @@ const handleRemove = async (
   taskData[list].splice(idx, 1);
   await saveTasks(taskData, metadata);
 
-  await ctx.editMessageText(`🗑️ Removed: ${task.name}`);
+  await panelReply(ctx, `🗑️ Removed: ${task.name}`);
 
   if (calendarEventId) {
     await promptCalendarAction(

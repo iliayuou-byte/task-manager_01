@@ -152,3 +152,7 @@ src/
 ### Navigation
 
 `panelReply` ensures inline screens have Back and Home controls, while persistent keyboard includes a Back key. Supply explicit parent callbacks where needed: time selection, task cards, importance, edit fields and confirmation flows. Home cancels unsaved brain/removal drafts and input/scenes. Validate ownership and draft expiry before navigation or confirmation; stale buttons must not save after Home.
+
+### Context reply keyboards
+
+`services/contextKeyboard.ts` translates callback-backed inline screen definitions into contextual reply keyboards and maps their text taps back to the validated handlers. Mount it behind allowlist and before commands/scenes. `panelReply` remembers mappings only after successful send, clears them for the main keyboard and replaces old panels because Telegram reply keyboards cannot be edited into a message. Main keyboard has five sections and no navigation/task mutation shortcuts. Preserve actual callback ownership/expiry validation; synthetic callbacks must never call Telegram answerCallbackQuery.

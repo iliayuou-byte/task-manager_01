@@ -1,5 +1,6 @@
 import type { BotContext } from '../middlewares/session.js';
 import { navigationKeyboard } from '../views/menuView.js';
+import { buildContextKeyboard, rememberKeyboard } from './contextKeyboard.js';
 
 type ReplyOptions = Parameters<BotContext['reply']>[1];
 interface Panel {
@@ -39,17 +40,35 @@ export const panelReply = async (
       options = { ...options, reply_markup: { inline_keyboard: rows } };
     }
   }
-  if (/^(?:❌|Не удалось|Дело изменилось)/.test(text))
-    return ctx.reply(text, options);
+  const markup = options?.reply_markup;
+  let keyboardActions: Map<string, string> | undefined;
+  if (ctx.chat?.type === 'private' && markup) {
+    if (
+      'inline_keyboard' in markup &&
+      markup.inline_keyboard.flat().every((button) => 'callback_data' in button)
+    ) {
+      const screen = buildContextKeyboard(markup.inline_keyboard);
+      keyboardActions = screen.callbacks;
+      options = { ...options, reply_markup: screen.keyboard };
+    } else if ('keyboard' in markup) keyboardActions = new Map();
+  }
+  if (/^(?:❌|Не удалось|Дело изменилось)/.test(text)) {
+    const result = await ctx.reply(text, options);
+    if (ctx.chat && keyboardActions)
+      rememberKeyboard(ctx.chat.id, keyboardActions);
+    return result;
+  }
+
   if (ctx.chat?.type !== 'private') return ctx.reply(text, options);
   const chat = ctx.chat.id;
   for (const [id, panel] of panels)
     if (Date.now() - panel.updated > 24 * 60 * 60_000) panels.delete(id);
   const first = !started.has(ctx);
   const previous = first ? panels.get(chat) : undefined;
-  const markup = options?.reply_markup;
+  const replyMarkup = options?.reply_markup;
   const canEdit =
-    previous?.ids.length === 1 && (!markup || 'inline_keyboard' in markup);
+    previous?.ids.length === 1 &&
+    (!replyMarkup || 'inline_keyboard' in replyMarkup);
   if (canEdit) {
     try {
       const result = await ctx.api.editMessageText(
@@ -59,8 +78,8 @@ export const panelReply = async (
         {
           ...options,
           reply_markup:
-            markup && 'inline_keyboard' in markup
-              ? markup
+            replyMarkup && 'inline_keyboard' in replyMarkup
+              ? replyMarkup
               : { inline_keyboard: [] },
         },
       );
@@ -81,6 +100,7 @@ export const panelReply = async (
     }
   }
   const message = await ctx.reply(text, options);
+  if (keyboardActions) rememberKeyboard(chat, keyboardActions);
   started.add(ctx);
   if (first) {
     panels.set(chat, { ids: [message.message_id], updated: Date.now() });

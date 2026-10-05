@@ -4,6 +4,10 @@ import * as aiClient from '../clients/ai.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { editSceneComposer } from '../scenes/editTaskScene.js';
+import {
+  getKeyboardAction,
+  registerContextKeyboard,
+} from '../services/contextKeyboard.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
@@ -76,6 +80,7 @@ const fixture = (user: number) => {
     ctx.session = session;
     await next();
   });
+  registerContextKeyboard(bot);
   registerAiSettings(bot);
   registerMenu(bot);
   registerBrainActions(bot);
@@ -109,22 +114,40 @@ const fixture = (user: number) => {
     });
   };
   const button = (label: string): string => {
-    for (const call of [...calls].reverse()) {
-      const markup = call.reply_markup as
-        | {
-            inline_keyboard?: Array<
-              Array<{ text: string; callback_data: string }>
-            >;
-          }
-        | undefined;
-      const found = markup?.inline_keyboard
-        ?.flat()
-        .find((item) => item.text.includes(label));
-      if (found) return found.callback_data;
-    }
+    const call = [...calls]
+      .reverse()
+      .find(
+        (call) =>
+          call.reply_markup && 'keyboard' in (call.reply_markup as object),
+      );
+    const markup = call?.reply_markup as
+      | { keyboard: Array<Array<{ text: string }>> }
+      | undefined;
+    const found = markup?.keyboard
+      .flat()
+      .find((item) => item.text.includes(label));
+    const action = found && getKeyboardAction(user, found.text);
+    if (action) return action;
     throw new Error(`Button missing: ${label}`);
   };
-  return { text, click, button, calls, data: () => data };
+  const labels = (): string[] => {
+    const call = [...calls]
+      .reverse()
+      .find(
+        (call) =>
+          call.reply_markup && 'keyboard' in (call.reply_markup as object),
+      );
+    const markup = call?.reply_markup as
+      | { keyboard: Array<Array<{ text: string }>> }
+      | undefined;
+    return markup?.keyboard.flat().map((item) => item.text) ?? [];
+  };
+  const tap = async (label: string) => {
+    const value = labels().find((value) => value.includes(label));
+    if (!value) throw new Error(`Button missing: ${label}`);
+    await text(value);
+  };
+  return { text, click, button, labels, tap, calls, data: () => data };
 };
 
 test('reminder buttons preserve disabled schedule and restore it', async () => {
@@ -220,9 +243,16 @@ test('time navigation goes one step back and home clears pending input', async (
   await f.click(f.button('09:00 — изменить'));
   await f.click(f.button('08'));
   await f.click(f.button('Назад'));
-  expect(f.calls[f.calls.length - 1].text).toBe('Выбери час:');
+  expect(
+    [...f.calls].reverse().find((call) => typeof call.text === 'string')?.text,
+  ).toBe('Выбери час:');
   await f.click(f.button('Назад'));
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('Напоминания');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('Напоминания');
   await f.click(f.button('09:00 — изменить'));
   await f.click(f.button('Ввести HH:MM'));
   await f.click(f.button('🏠 Меню'));
@@ -236,13 +266,28 @@ test('task importance and removal go back without saving changes', async () => {
   await f.click(f.button('1. Первое'));
   await f.click(f.button('Важность'));
   await f.click(f.button('Назад'));
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('Первое');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('Первое');
   await f.click(f.button('Удалить'));
   await f.click(f.button('Назад'));
   expect(f.data().taskData.uncompleted).toHaveLength(2);
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('Первое');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('Первое');
   await f.click(f.button('Назад'));
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('Нажми на дело');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('Нажми на дело');
 });
 
 test('brain preview back cancels draft and restores add prompt', async () => {
@@ -254,7 +299,12 @@ test('brain preview back cancels draft and restores add prompt', async () => {
   await f.text(MENU.add);
   await f.text('Новое');
   await f.click(f.button('Назад'));
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('Напиши дела');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('Напиши дела');
   expect(f.data().taskData.uncompleted).toHaveLength(2);
   await f.click(f.button('🏠 Меню'));
   await f.text('Случайный текст');
@@ -268,7 +318,12 @@ test('edit input back restores fields and home exits the scene', async () => {
   await f.click(f.button('Изменить'));
   await f.click(f.button('Name'));
   await f.click(f.button('Назад'));
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('Выбери поле');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('Выбери поле');
   await f.click(f.button('🏠 Меню'));
   await f.text('Случайный текст');
   expect(f.data().taskData.uncompleted[0].name).toBe('Первое');
@@ -283,5 +338,81 @@ test('home invalidates pending deletion even if an old button survives cleanup',
   await f.click(f.button('🏠 Меню'));
   await f.click(confirm);
   expect(f.data().taskData.uncompleted).toHaveLength(2);
-  expect(String(f.calls[f.calls.length - 1].text)).toContain('устарело');
+  expect(
+    String(
+      [...f.calls].reverse().find((call) => typeof call.text === 'string')
+        ?.text,
+    ),
+  ).toContain('устарело');
+});
+
+test('main keyboard has only five sections; settings replaces it and back restores it', async () => {
+  const f = fixture(512);
+  await f.text(MENU.home);
+  expect(f.labels()).toEqual([
+    MENU.today,
+    MENU.all,
+    MENU.add,
+    MENU.now,
+    MENU.settings,
+  ]);
+  await f.tap('Настройки');
+  expect(f.labels()).toContain('🔔 Напоминания');
+  expect(f.labels()).toContain('🧠 Приоритеты ИИ');
+  expect(f.labels()).not.toContain(MENU.today);
+  expect(f.labels()).not.toContain(MENU.remove);
+  await f.tap('Напоминания');
+  expect(f.labels()).toContain('🔕 Выключить');
+  expect(f.labels()).not.toContain('🧠 Приоритеты ИИ');
+  await f.tap('Назад');
+  expect(f.labels()).toContain('🧠 Приоритеты ИИ');
+  await f.tap('🏠 Меню');
+  expect(f.labels()).toEqual([
+    MENU.today,
+    MENU.all,
+    MENU.add,
+    MENU.now,
+    MENU.settings,
+  ]);
+});
+
+test('task card bottom keyboard runs actions and list back without interpreting buttons as new tasks', async () => {
+  const f = fixture(513);
+  await f.text(MENU.all);
+  await f.tap('1. Первое');
+  expect(f.labels()).toContain('✅ Готово');
+  expect(f.labels()).toContain('🗑 Удалить');
+  expect(f.labels()).not.toContain(MENU.add);
+  await f.tap('Важность');
+  await f.tap('Не важно и не срочно');
+  expect(f.data().taskData.uncompleted[0].important).toBe(false);
+  await f.tap('Назад');
+  expect(f.labels().some((label) => label.includes('1. Первое'))).toBe(true);
+  await f.tap('1. Первое');
+  await f.tap('Готово');
+  expect(f.data().taskData.completed[0].name).toBe('Первое');
+});
+
+test('AI rules and time selection buttons work through actual keyboard text', async () => {
+  const f = fixture(514);
+  await f.text(MENU.settings);
+  await f.tap('Приоритеты ИИ');
+  await f.tap('Мои правила');
+  await f.tap('Назад');
+  expect(f.data().metadata.ai_priority_rules).toBeUndefined();
+  await f.tap('Назад');
+  await f.tap('Напоминания');
+  await f.tap('09:00 — изменить');
+  await f.tap('08');
+  await f.tap('08:15');
+  expect(f.data().metadata.reminder_times).toBe('08:15,19:00');
+});
+
+test('reminder deletion keyboard identifies the exact time instead of identical delete labels', async () => {
+  const f = fixture(515);
+  await f.click('menu:reminders');
+  expect(f.labels()).toContain('🗑 09:00');
+  expect(f.labels()).toContain('🗑 19:00');
+  await f.tap('🗑 09:00');
+  expect(f.data().metadata.reminder_times).toBe('19:00');
 });

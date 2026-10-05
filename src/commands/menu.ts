@@ -153,7 +153,7 @@ const showReminders = async (ctx: BotContext) => {
   times.forEach((time, index) => {
     keyboard
       .text(`🕒 ${time} — изменить`, `menu:slot:${state.id}:${index}`)
-      .text('✖️', `menu:deltime:${state.id}:${index}`)
+      .text(`🗑 ${time}`, `menu:deltime:${state.id}:${index}`)
       .row();
   });
   if (times.length < 4)

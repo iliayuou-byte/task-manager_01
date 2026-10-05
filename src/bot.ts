@@ -35,6 +35,8 @@ import logger from './core/logger.js';
 import { allowlist } from './middlewares/allowlist.js';
 import { type BotContext, sessionMiddleware } from './middlewares/session.js';
 import { editSceneComposer, enterEditScene } from './scenes/editTaskScene.js';
+import { panelReply } from './services/chatPanel.js';
+import { registerContextKeyboard } from './services/contextKeyboard.js';
 import { START_WORDING } from './views/generalView.js';
 import { mainKeyboard } from './views/menuView.js';
 
@@ -68,6 +70,7 @@ infoComposer.command(Command.WHATSNEW, whatsnewCommand);
 export const opComposer = new Composer<BotContext>();
 
 opComposer.use(allowlist);
+registerContextKeyboard(opComposer);
 opComposer.command(Command.START, menuCommand);
 opComposer.command(Command.MENU, menuCommand);
 registerAiSettings(opComposer);
@@ -110,27 +113,25 @@ opComposer.callbackQuery(/^tz_(.+)$/, async (ctx) => {
   const value = ctx.match[1];
   await ctx.answerCallbackQuery();
   if (value === 'cancel') {
-    await ctx.editMessageText('❌ Timezone selection cancelled.');
+    await panelReply(ctx, '❌ Timezone selection cancelled.');
     return;
   }
-  await ctx.editMessageText(`Setting timezone to ${value}...`);
+  await panelReply(ctx, `Setting timezone to ${value}...`);
   await applyTimezone(ctx, value);
 });
 
 bot.use(infoComposer, opComposer);
 
 bot.on('message:text', (ctx) => {
-  ctx
-    .reply('Выбери действие кнопками или отправь ГС с делами.', {
-      reply_markup: mainKeyboard(),
-    })
-    .catch((error) => {
-      logger.errorWithContext({
-        userId: ctx.from?.id,
-        op: 'BOT_REPLY',
-        error,
-      });
+  panelReply(ctx, 'Выбери действие кнопками или отправь ГС с делами.', {
+    reply_markup: mainKeyboard(),
+  }).catch((error) => {
+    logger.errorWithContext({
+      userId: ctx.from?.id,
+      op: 'BOT_REPLY',
+      error,
     });
+  });
 });
 
 logger.debugWithContext({ message: START_WORDING });

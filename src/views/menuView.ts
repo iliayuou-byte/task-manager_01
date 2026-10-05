@@ -20,13 +20,7 @@ export const mainKeyboard = () =>
     .text(MENU.add)
     .text(MENU.now)
     .row()
-    .text(MENU.done)
-    .text(MENU.remove)
-    .row()
     .text(MENU.settings)
-    .text(MENU.home)
-    .row()
-    .text(MENU.back)
     .resized()
     .persistent();
 

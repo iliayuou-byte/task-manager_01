@@ -47,13 +47,13 @@ const fixture = (chat: number) => {
   };
 };
 
-test('single panel edits in place and removes consumed text', async () => {
+test('context keyboard replaces the panel and removes consumed text', async () => {
   const f = fixture(8001);
   await panelReply(f.context('text'), 'Settings');
   await panelReply(f.context(), 'Reminder settings');
-  expect(f.calls.filter((call) => call.method === 'send')).toHaveLength(1);
+  expect(f.calls.filter((call) => call.method === 'send')).toHaveLength(2);
   expect(
-    f.calls.some((call) => call.method === 'edit' && call.id === 100),
+    f.calls.some((call) => call.method === 'delete' && call.id === 100),
   ).toBe(true);
   expect(
     f.calls.some((call) => call.method === 'delete' && call.id === 50),
@@ -72,7 +72,7 @@ test('multipart previews stay together until replaced, then all parts are remove
   ).toEqual([100, 101, 102]);
 });
 
-test('fallback sends replacement before cleanup and cleanup failures do not break action', async () => {
+test('new keyboard is sent before cleanup and cleanup failures do not break action', async () => {
   const f = fixture(8003);
   await panelReply(f.context(), 'Old menu');
   f.failEdit();
@@ -80,7 +80,6 @@ test('fallback sends replacement before cleanup and cleanup failures do not brea
   await panelReply(f.context(), 'New menu');
   expect(f.calls.map((call) => call.method)).toEqual([
     'send',
-    'edit',
     'send',
     'delete',
   ]);

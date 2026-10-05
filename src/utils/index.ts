@@ -7,6 +7,7 @@ import {
   type BotContext,
   setPendingCalendarOps,
 } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { navigationKeyboard } from '../views/menuView.js';
 
 // Extract argument from command text
@@ -279,7 +280,7 @@ export const promptCalendarAction = async (
   ops: CalendarOpSession[],
 ) => {
   setPendingCalendarOps(ctx.from!.id, ops);
-  await ctx.reply(message, { reply_markup: calendarKeyboard });
+  await panelReply(ctx, message, { reply_markup: calendarKeyboard });
 };
 
 export const logAndReplyError = (
@@ -289,7 +290,7 @@ export const logAndReplyError = (
   message = '❌ Something went wrong. Please try again.',
 ) => {
   logger.errorWithContext({ userId: ctx.from?.id, op, error });
-  ctx.reply(message, {
+  panelReply(ctx, message, {
     reply_markup:
       ctx.chat?.type === 'private' ? navigationKeyboard() : undefined,
   });

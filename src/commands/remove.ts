@@ -3,6 +3,7 @@ import { Command } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { TaskTypeToOp } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -20,7 +21,7 @@ import { removeByNumbers } from './removeSelected.js';
 
 export const removeCommand = async (ctx: BotContext) => {
   if (!ctx.message || !('text' in ctx.message)) {
-    return ctx.reply('❌ Please provide a task name to remove');
+    return panelReply(ctx, '❌ Please provide a task name to remove');
   }
 
   try {
@@ -34,8 +35,8 @@ export const removeCommand = async (ctx: BotContext) => {
     if (!arg) {
       const { taskData } = await queryTasks();
       const total = taskData.uncompleted.length + taskData.completed.length;
-      if (total === 0) return ctx.reply(NO_TASK_MESSAGE);
-      return ctx.reply('Select a task to remove:', {
+      if (total === 0) return panelReply(ctx, NO_TASK_MESSAGE);
+      return panelReply(ctx, 'Select a task to remove:', {
         reply_markup: generateRemovePickerKeyboard(taskData, 0),
       });
     }
@@ -47,7 +48,7 @@ export const removeCommand = async (ctx: BotContext) => {
     if (taskIdx === -1) {
       taskIdx = findTaskIdxByName(taskData.completed, arg);
       if (taskIdx === -1) {
-        return ctx.reply(TASK_NOT_FOUND_MESSAGE);
+        return panelReply(ctx, TASK_NOT_FOUND_MESSAGE);
       }
       taskTypeToRemove = 'completed';
     } else {
@@ -71,7 +72,8 @@ export const removeCommand = async (ctx: BotContext) => {
     taskData[taskTypeToRemove].splice(taskIdx, 1);
     await saveTasks(taskData, metadata);
 
-    await ctx.reply(
+    await panelReply(
+      ctx,
       formatOperatedTaskStr(taskToRemove, {
         command: Command.REMOVE,
         prefix: '🗑️ ',
