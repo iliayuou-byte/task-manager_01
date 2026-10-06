@@ -16,6 +16,7 @@ import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { displayTaskTags } from '../services/taskTags.js';
 import { extractArg, logAndReplyError } from '../utils/index.js';
+import { SECTION_TITLES } from '../views/botStyle.js';
 import { splitMessages } from '../views/eisenhowerView.js';
 
 interface Draft {
@@ -114,8 +115,8 @@ const categoryButtons = [
 
 const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
   beginPanel(ctx);
-  const lines = QUADRANTS.flatMap((title, quadrant) => [
-    `-------- ${title} --------`,
+  const lines = SECTION_TITLES.flatMap((title, quadrant) => [
+    title,
     ...draft.tasks.flatMap((task, index) =>
       !draft.removed.has(index) && getQuadrant(task) === quadrant + 1
         ? [
@@ -126,12 +127,12 @@ const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
     '',
   ]);
   const messages = splitMessages([
-    '🧠 Как распределим дела?',
+    `🧠 Черновик · ${draft.tasks.length - draft.removed.size} дел`,
+    'ИИ разложил. Ты — главный.',
     '❓ — предложение ИИ, ещё не проверено тобой. ✅ — твой выбор.',
-    'Важность: влияет на цели или имеет серьёзные последствия. Срочность: есть близкий срок или последствия промедления.',
     '',
     ...lines,
-    'Можно изменить категорию или удалить ошибочно распознанное дело. Номера остальных дел сохраняются. До сохранения это только черновик (15 минут).',
+    'Не то услышал? Удали лишнее. Категория мимо? Поправь.\nНичего не запишу без «Сохранить». Черновик живёт 15 минут.',
   ]);
   for (let index = 0; index < messages.length; index++) {
     await panelReply(
@@ -374,7 +375,7 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
       drafts.delete(id);
       await panelReply(
         ctx,
-        `✅ Добавлено задач: ${additions.length}.\n\n${additions.map((task) => `• ${task.name}`).join('\n')}\n\n/now — следующий шаг\n/list — весь список`,
+        `✅ Записал. Добавлено задач: ${additions.length}.\n\n${additions.map((task) => `• ${task.name}`).join('\n')}\n\n/now — следующий шаг\n/list — весь список`,
       );
     } catch (error) {
       draft.saving = false;

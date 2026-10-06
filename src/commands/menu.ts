@@ -5,7 +5,7 @@ import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
 import { panelNotice, panelReply } from '../services/chatPanel.js';
-import { getQuadrant, QUADRANTS, setQuadrant } from '../services/eisenhower.js';
+import { QUADRANTS, setQuadrant } from '../services/eisenhower.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
 import { saveTasks } from '../services/saveTasks.js';
@@ -15,6 +15,12 @@ import {
   taskFingerprint,
 } from '../services/taskNumbers.js';
 import { logAndReplyError, markTaskCompleted } from '../utils/index.js';
+import {
+  ADD_TEXT,
+  HOME_TEXT,
+  SETTINGS_TEXT,
+  taskCardText,
+} from '../views/botStyle.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import {
   MENU,
@@ -67,11 +73,10 @@ export const menuCommand = async (ctx: BotContext) => {
   newState(ctx);
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
-  await panelReply(
-    ctx,
-    'Выбирай действие кнопками. Дела можно добавлять текстом или ГС.',
-    { reply_markup: mainKeyboard() },
-  );
+  await panelReply(ctx, HOME_TEXT, {
+    reply_markup: mainKeyboard(),
+    parse_mode: 'HTML',
+  });
 };
 
 export const returnToTaskList = async (ctx: BotContext) => {
@@ -95,7 +100,7 @@ export const showTasks = async (ctx: BotContext, today = false) => {
   state.tasks = structuredClone(tasks);
   state.today = today;
   const messages = splitMessages([
-    today ? `📋 Сегодня · ${date}` : '📚 Все незавершённые дела',
+    today ? `📋 Сегодня · ${date}` : `📚 Все дела · ${tasks.length}`,
     '',
     ...matrixLines(tasks),
   ]);
@@ -131,7 +136,7 @@ const showPicker = async (
   keyboard.row().text('⬅️ Назад', 'menu:home').text('🏠 Меню', 'menu:home');
   await panelReply(
     ctx,
-    `${list ? `${list}\n\n` : ''}Нажми на дело, чтобы открыть действия:`,
+    `${list ? `${list}\n\n` : ''}Выбирай дело — разберёмся с ним.`,
     { reply_markup: keyboard },
   );
 };
@@ -173,7 +178,7 @@ const showReminders = async (ctx: BotContext) => {
     .text('Назад', 'menu:settings');
   await panelReply(
     ctx,
-    `🔔 Напоминания ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nСообщения со списком дел будут приходить в выбранное время.`,
+    `🔔 Напоминания ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nВ выбранное время пну сообщением. Вежливо. Почти.`,
     { reply_markup: keyboard },
   );
 };
@@ -234,13 +239,10 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
     .row()
     .text('⬅️ Назад', `menu:tasks:${state.id}`)
     .text('🏠 Меню', 'menu:home');
-  await panelReply(
-    ctx,
-    `${task.name}\n${QUADRANTS[getQuadrant(task) - 1]}\n${task.tags.map((tag) => `#${tag}`).join(' ')}\n\n${task.priorityLocked ? '🔒 Категория защищена от изменений ИИ.' : '🧠 ИИ может предложить другую категорию.'}`,
-    {
-      reply_markup: keyboard,
-    },
-  );
+  await panelReply(ctx, taskCardText(task), {
+    parse_mode: 'HTML',
+    reply_markup: keyboard,
+  });
 };
 
 export const registerMenu = (composer: Composer<BotContext>) => {
@@ -260,7 +262,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         }
         if (text === MENU.settings) {
           newState(ctx);
-          return await panelReply(ctx, '⚙️ Настройки', {
+          return await panelReply(ctx, SETTINGS_TEXT, {
+            parse_mode: 'HTML',
             reply_markup: settingsKeyboard(),
           });
         }
@@ -334,7 +337,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (action === 'back') return await backToTask(ctx);
       if (action === 'settings') {
         newState(ctx);
-        return await panelReply(ctx, '⚙️ Настройки', {
+        return await panelReply(ctx, SETTINGS_TEXT, {
+          parse_mode: 'HTML',
           reply_markup: settingsKeyboard(),
         });
       }
@@ -528,7 +532,8 @@ export const showAddPrompt = async (ctx: BotContext) => {
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
   newState(ctx).input = 'brain';
-  await panelReply(ctx, 'Напиши дела одним сообщением или отправь ГС.', {
+  await panelReply(ctx, ADD_TEXT, {
+    parse_mode: 'HTML',
     reply_markup: navigationKeyboard('menu:home'),
   });
 };

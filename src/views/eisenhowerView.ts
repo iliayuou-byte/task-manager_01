@@ -1,16 +1,17 @@
 import type { Task } from '../core/types.js';
-import { getQuadrant, QUADRANTS } from '../services/eisenhower.js';
+import { getQuadrant } from '../services/eisenhower.js';
 
 import { displayTaskTags } from '../services/taskTags.js';
+import { SECTION_TITLES } from './botStyle.js';
 
 export const matrixLines = (tasks: readonly Task[]): string[] => {
   let number = 0;
-  return QUADRANTS.flatMap((title, index) => {
+  return SECTION_TITLES.flatMap((title, index) => {
     const group = tasks.filter((task) => getQuadrant(task) === index + 1);
     return [
-      `-------- ${title} --------`,
+      `${title} · ${group.length}`,
       ...(!group.length
-        ? ['Пока пусто']
+        ? ['— пока пусто']
         : group.map((task) => {
             const details = [
               task.date,

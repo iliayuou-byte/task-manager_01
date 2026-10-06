@@ -26,7 +26,7 @@ export const todayCommand = async (ctx: BotContext) => {
     );
 
     if (todaysTasks.length === 0) {
-      return panelReply(ctx, '📭 No tasks for today!');
+      return panelReply(ctx, '👌 На сегодня пусто. Редкий случай — пользуйся.');
     }
 
     for (const message of splitMessages([

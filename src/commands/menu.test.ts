@@ -316,7 +316,7 @@ test('task importance and removal go back without saving changes', async () => {
       [...f.calls].reverse().find((call) => typeof call.text === 'string')
         ?.text,
     ),
-  ).toContain('Нажми на дело');
+  ).toContain('Выбирай дело');
 });
 
 test('brain preview back cancels draft and restores add prompt', async () => {

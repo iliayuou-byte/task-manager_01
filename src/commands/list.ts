@@ -22,11 +22,11 @@ export const listCommand = async (ctx: BotContext) => {
     if (!arg) {
       // Default: show pending tasks
       tasksToDisplay = taskData.uncompleted;
-      title = '📋 *Pending Tasks*';
+      title = '📚 Твои дела';
     } else if (arg.toLowerCase() === 'all') {
       // Show all tasks
       tasksToDisplay = taskData.uncompleted.concat(taskData.completed);
-      title = '📚 *All Tasks*';
+      title = '📚 Все дела · включая выполненные';
     } else {
       // Filter by tags
       const filterTags = parseTags(arg);
@@ -44,7 +44,7 @@ export const listCommand = async (ctx: BotContext) => {
       );
 
       const tagStr = filterTags.map((t) => `#${t}`).join(' ');
-      title = `🏷️ *Tasks with ${tagStr}*`;
+      title = `🏷 Дела с тегами ${tagStr}`;
     }
 
     if (tasksToDisplay.length === 0) {
