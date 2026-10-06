@@ -202,3 +202,8 @@ Never persist message text, task content, audio, callback payloads or raw errors
 statistics. Logger hooks deduplicate errors per AsyncLocalStorage interaction;
 `saveTasks` counts successful writes only. Background jobs must not inherit usage
 interaction scopes. `checkReminders` prunes 30-day inactive rows.
+
+Draft deletion uses `Draft.removed` tombstones in `commands/brain.ts`. Keep original
+indices stable, skip removed entries in previews/pickers/sequential review and saves,
+and reject old category/delete callbacks for removed entries. Removing the final
+entry invalidates the entire draft without writing storage.

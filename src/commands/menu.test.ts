@@ -789,3 +789,62 @@ test('Home during assistant generation suppresses late replies and memory writes
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('deleting misrecognized draft tasks preserves other numbers and saves only the survivor', async () => {
+  const f = fixture(580);
+  spies.push(
+    spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+      { name: 'Ошибка распознавания', completed: false, tags: [] },
+      { name: 'Нужное дело', completed: false, tags: [] },
+      { name: 'Ещё ошибка', completed: false, tags: [] },
+    ]),
+  );
+  await f.text(MENU.add);
+  await f.text('голосовой список');
+  await f.tap('Разобрать по одному');
+  const staleDelete = f.button('Удалить');
+  await f.tap('Удалить');
+  expect(
+    String([...f.calls].reverse().find((call) => call.text)?.text),
+  ).toContain('Дело 2 из 3: Нужное дело');
+  await f.click(staleDelete);
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.tap('Важно, не срочно');
+  await f.tap('Удалить');
+  const preview = String(
+    [...f.calls].reverse().find((call) => call.text)?.text,
+  );
+  expect(preview).toContain('2. ✅ Нужное дело');
+  expect(preview).not.toContain('Ошибка распознавания');
+  expect(preview).not.toContain('Ещё ошибка');
+  await f.tap('Сохранить');
+  expect(f.data().taskData.uncompleted).toHaveLength(3);
+  expect(
+    f.data().taskData.uncompleted.some((task) => task.name === 'Нужное дело'),
+  ).toBe(true);
+  expect(
+    f.data().taskData.uncompleted.some((task) => task.name.includes('ошибка')),
+  ).toBe(false);
+});
+
+test('delete picker removes the last draft task without saving and invalidates old save action', async () => {
+  const f = fixture(581);
+  spies.push(
+    spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+      { name: 'Неправильно услышанное', completed: false, tags: [] },
+    ]),
+  );
+  await f.text(MENU.add);
+  await f.text('голосовой список');
+  const staleSave = f.button('Сохранить');
+  await f.tap('Удалить дело');
+  await f.tap('1. Неправильно');
+  expect(
+    String([...f.calls].reverse().find((call) => call.text)?.text),
+  ).toContain('Черновик пуст');
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.click(staleSave);
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.tap('Назад');
+  expect(f.labels()).toContain(MENU.add);
+});

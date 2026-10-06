@@ -25,6 +25,7 @@ interface Draft {
   expires: number;
   saving: boolean;
   reviewed: Set<number>;
+  removed: Set<number>;
 }
 const drafts = new Map<string, Draft>();
 export const cancelBrainDrafts = (ctx: BotContext) => {
@@ -93,6 +94,7 @@ export const processBrainInput = async (
       expires: Date.now() + 15 * 60_000,
       saving: false,
       reviewed: new Set(),
+      removed: new Set(),
     };
     drafts.set(id, draft);
     await showDraft(ctx, id, draft);
@@ -115,7 +117,7 @@ const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
   const lines = QUADRANTS.flatMap((title, quadrant) => [
     `-------- ${title} --------`,
     ...draft.tasks.flatMap((task, index) =>
-      getQuadrant(task) === quadrant + 1
+      !draft.removed.has(index) && getQuadrant(task) === quadrant + 1
         ? [
             `${index + 1}. ${draft.reviewed.has(index) ? '✅' : '❓'} ${task.name.replace(/\s+/g, ' ').slice(0, 250)}${displayTaskTags(task.tags)}${task.date ? ` (${task.date}${task.time ? ` ${task.time}` : ''})` : ''}`,
           ]
@@ -129,7 +131,7 @@ const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
     'Важность: влияет на цели или имеет серьёзные последствия. Срочность: есть близкий срок или последствия промедления.',
     '',
     ...lines,
-    'Можно разобрать всё по одному или изменить отдельное дело. Номера сохраняются при переносе. До сохранения это только черновик (15 минут).',
+    'Можно изменить категорию или удалить ошибочно распознанное дело. Номера остальных дел сохраняются. До сохранения это только черновик (15 минут).',
   ]);
   for (let index = 0; index < messages.length; index++) {
     await panelReply(
@@ -141,6 +143,7 @@ const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
               .text('🧭 Разобрать по одному', `brain_review:${id}`)
               .row()
               .text('🔀 Изменить категорию', `brain_pick:${id}:0`)
+              .text('🗑 Удалить дело', `brain_pickdelete:${id}:0`)
               .row()
               .text('✅ Сохранить', `brain_yes:${id}`)
               .text('⬅️ Назад', `brain_no:${id}`),
@@ -171,7 +174,11 @@ const showDraftTask = async (
         `brain_set:${id}:${index}:${getQuadrant(task)}:all`,
       )
       .row();
-  keyboard.text('⬅️ Назад', `brain_pick:${id}:${Math.floor(index / 6)}`);
+  keyboard.text('🗑 Удалить', `brain_delete:${id}:${index}:${mode}`).row();
+  keyboard.text(
+    '⬅️ Назад',
+    `brain_pick:${id}:${Math.floor(draft.tasks.slice(0, index).filter((_, i) => !draft.removed.has(i)).length / 6)}`,
+  );
   await panelReply(
     ctx,
     `Дело ${index + 1} из ${draft.tasks.length}: ${task.name}\n\nПредложенная категория: ${QUADRANTS[getQuadrant(task) - 1]}\n\nВажно ли это для твоих целей? Что случится, если отложить? Есть ли срок — например, до выхода из дома? Выбери категорию.`,
@@ -184,29 +191,43 @@ const showDraftPicker = async (
   id: string,
   draft: Draft,
   page: number,
+  removing = false,
 ) => {
   const keyboard = new InlineKeyboard();
+  const items = draft.tasks.flatMap((task, index) =>
+    draft.removed.has(index) ? [] : [{ task, index }],
+  );
   const start = page * 6;
-  draft.tasks.slice(start, start + 6).forEach((task, offset) => {
+  const pickAction = removing ? 'pickdelete' : 'pick';
+  items.slice(start, start + 6).forEach(({ task, index }) => {
     keyboard
       .text(
-        `${start + offset + 1}. ${task.name.slice(0, 45)}`,
-        `brain_task:${id}:${start + offset}`,
+        `${index + 1}. ${task.name.slice(0, 45)}`,
+        removing
+          ? `brain_delete:${id}:${index}:one`
+          : `brain_task:${id}:${index}`,
       )
       .row();
   });
-  if (page > 0) keyboard.text('◀️ Ранее', `brain_pick:${id}:${page - 1}`);
-  if (start + 6 < draft.tasks.length)
-    keyboard.text('Далее ▶️', `brain_pick:${id}:${page + 1}`);
+  if (page > 0)
+    keyboard.text('◀️ Ранее', `brain_${pickAction}:${id}:${page - 1}`);
+  if (start + 6 < items.length)
+    keyboard.text('Далее ▶️', `brain_${pickAction}:${id}:${page + 1}`);
   keyboard.row().text('⬅️ Назад', `brain_preview:${id}`);
-  await panelReply(ctx, 'Выбери дело, которому нужно изменить категорию.', {
-    reply_markup: keyboard,
-  });
+  await panelReply(
+    ctx,
+    removing
+      ? 'Выбери ошибочное дело, чтобы убрать его из черновика. Сохранённые задачи не изменятся.'
+      : 'Выбери дело, которому нужно изменить категорию.',
+    {
+      reply_markup: keyboard,
+    },
+  );
 };
 
 export const registerBrainActions = (composer: Composer<BotContext>) => {
   composer.callbackQuery(
-    /^brain_(review|pick|task|set|preview):([^:]+)(?::(\d+))?(?::([1-4]))?(?::(all|one))?$/,
+    /^brain_(review|pick|pickdelete|task|set|preview):([^:]+)(?::(\d+))?(?::([1-4]))?(?::(all|one))?$/,
     async (ctx) => {
       const [, action, id, rawIndex, rawQuadrant, mode] = ctx.match;
       const draft = drafts.get(id);
@@ -223,11 +244,17 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
         return;
       }
       const index = Number(rawIndex ?? 0);
-      if ((action === 'task' || action === 'set') && !draft.tasks[index]) {
+      if (
+        (action === 'task' || action === 'set') &&
+        (!draft.tasks[index] || draft.removed.has(index))
+      ) {
         await ctx.answerCallbackQuery({ text: 'Дело недоступно.' });
         return;
       }
-      if (action === 'pick' && index * 6 >= draft.tasks.length) {
+      if (
+        (action === 'pick' || action === 'pickdelete') &&
+        index * 6 >= draft.tasks.length - draft.removed.size
+      ) {
         await ctx.answerCallbackQuery({ text: 'Страница недоступна.' });
         return;
       }
@@ -237,13 +264,16 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
       }
       await ctx.answerCallbackQuery();
       if (action === 'preview') await showDraft(ctx, id, draft);
-      else if (action === 'pick') await showDraftPicker(ctx, id, draft, index);
+      else if (action === 'pick' || action === 'pickdelete')
+        await showDraftPicker(ctx, id, draft, index, action === 'pickdelete');
       else if (action === 'review' || action === 'task')
         await showDraftTask(
           ctx,
           id,
           draft,
-          action === 'review' ? 0 : index,
+          action === 'review'
+            ? draft.tasks.findIndex((_, i) => !draft.removed.has(i))
+            : index,
           action === 'review' ? 'all' : 'one',
         );
       else {
@@ -252,10 +282,56 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
           Number(rawQuadrant),
         );
         draft.reviewed.add(index);
-        if (mode === 'all' && index + 1 < draft.tasks.length)
-          await showDraftTask(ctx, id, draft, index + 1, mode);
+        const next = draft.tasks.findIndex(
+          (_, i) => i > index && !draft.removed.has(i),
+        );
+        if (mode === 'all' && next >= 0)
+          await showDraftTask(ctx, id, draft, next, mode);
         else await showDraft(ctx, id, draft);
       }
+    },
+  );
+  composer.callbackQuery(
+    /^brain_delete:([^:]+):(\d+):(all|one)$/,
+    async (ctx) => {
+      const [, id, rawIndex, mode] = ctx.match;
+      const draft = drafts.get(id);
+      const index = Number(rawIndex);
+      if (
+        !draft ||
+        draft.owner !== ctx.from.id ||
+        draft.chat !== ctx.chat?.id ||
+        draft.expires < Date.now() ||
+        draft.saving ||
+        !draft.tasks[index] ||
+        draft.removed.has(index)
+      ) {
+        await ctx.answerCallbackQuery({
+          text: 'Дело недоступно или уже удалено.',
+        });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      draft.removed.add(index);
+      if (draft.removed.size === draft.tasks.length) {
+        drafts.delete(id);
+        await panelReply(
+          ctx,
+          'Черновик пуст: все распознанные дела удалены. Ничего не сохранено.',
+          {
+            reply_markup: new InlineKeyboard()
+              .text('⬅️ Назад', 'menu:home')
+              .text('🏠 Меню', 'menu:home'),
+          },
+        );
+        return;
+      }
+      const next = draft.tasks.findIndex(
+        (_, i) => i > index && !draft.removed.has(i),
+      );
+      if (mode === 'all' && next >= 0)
+        await showDraftTask(ctx, id, draft, next, mode);
+      else await showDraft(ctx, id, draft);
     },
   );
   composer.callbackQuery(/^brain_(yes|no):(.+)$/, async (ctx) => {
@@ -286,7 +362,10 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
     draft.saving = true;
     try {
       const { taskData, metadata } = await queryTasks();
-      const additions = uniqueBrainTasks(draft.tasks, taskData.uncompleted);
+      const additions = uniqueBrainTasks(
+        draft.tasks.filter((_, index) => !draft.removed.has(index)),
+        taskData.uncompleted,
+      );
       if (additions.length) {
         taskData.uncompleted.unshift(...additions);
         if (!(await saveTasks(taskData, metadata)))
