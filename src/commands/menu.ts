@@ -178,7 +178,7 @@ const showReminders = async (ctx: BotContext) => {
     .text('Назад', 'menu:settings');
   await panelReply(
     ctx,
-    `🔔 Напоминания ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nВ выбранное время пну сообщением. Вежливо. Почти.`,
+    `🔔 Напоминания ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nВ выбранное время пришлю сообщение со списком дел.`,
     { reply_markup: keyboard },
   );
 };
