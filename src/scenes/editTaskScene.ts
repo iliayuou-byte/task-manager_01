@@ -4,7 +4,7 @@ import { Command, EDITABLE_FIELDS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { EditableField, Priority, Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
-import { panelReply } from '../services/chatPanel.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { taskFingerprint } from '../services/taskNumbers.js';
@@ -12,7 +12,6 @@ import {
   escapeMarkdownV2,
   findTaskIdxByName,
   findTimeConflictingTask,
-  formatOperatedTaskStr,
   parseTags,
   promptCalendarAction,
 } from '../utils/index.js';
@@ -209,16 +208,12 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     }
 
     taskData.uncompleted[taskIdx] = updatedTask;
-    await saveTasks(taskData, metadata);
-
-    await panelReply(
-      ctx,
-      formatOperatedTaskStr(updatedTask, {
-        command: Command.EDIT,
-        prefix: `✅ *${escapeMarkdownV2(state.field)}* in `,
-      }),
-      { parse_mode: 'MarkdownV2' },
-    );
+    if (!(await saveTasks(taskData, metadata)))
+      throw new Error('Storage did not confirm save');
+    ctx.session.editScene = undefined;
+    const { returnToTaskList } = await import('../commands/menu.js');
+    await returnToTaskList(ctx);
+    await panelNotice(ctx, `✅ Изменено: ${updatedTask.name}`);
 
     // Calendar Integration Logic
     if (oldTask.calendarEventId) {
@@ -227,13 +222,18 @@ editSceneComposer.on('message:text', async (ctx, next) => {
           fieldToUpdate,
         )
       ) {
-        await promptCalendarAction(ctx, 'Update Google Calendar Event?', [
-          {
-            type: 'update',
-            taskName: updatedTask.name,
-            calendarEventId: oldTask.calendarEventId,
-          },
-        ]);
+        await promptCalendarAction(
+          ctx,
+          'Update Google Calendar Event?',
+          [
+            {
+              type: 'update',
+              taskName: updatedTask.name,
+              calendarEventId: oldTask.calendarEventId,
+            },
+          ],
+          true,
+        );
       }
     } else {
       if (
@@ -241,9 +241,12 @@ editSceneComposer.on('message:text', async (ctx, next) => {
         updatedTask.date &&
         updatedTask.time
       ) {
-        await promptCalendarAction(ctx, 'Add this task to Google Calendar?', [
-          { type: 'add', taskName: updatedTask.name },
-        ]);
+        await promptCalendarAction(
+          ctx,
+          'Add this task to Google Calendar?',
+          [{ type: 'add', taskName: updatedTask.name }],
+          true,
+        );
       }
     }
   } catch (error) {

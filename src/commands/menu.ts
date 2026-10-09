@@ -84,7 +84,7 @@ export const returnToTaskList = async (ctx: BotContext) => {
   return showTasks(ctx, today);
 };
 
-export const showTasks = async (ctx: BotContext, today = false) => {
+export const showTasks = async (ctx: BotContext, today = false, page = 0) => {
   const { taskData, metadata } = await queryTasks();
   const date = formatInTimeZone(
     new Date(),
@@ -108,7 +108,13 @@ export const showTasks = async (ctx: BotContext, today = false) => {
   rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, tasks);
   if (!tasks.length)
     return await panelReply(ctx, messages[messages.length - 1]);
-  await showPicker(ctx, state, 0, messages[messages.length - 1]);
+  const lastPage = Math.max(0, Math.ceil(tasks.length / 6) - 1);
+  await showPicker(
+    ctx,
+    state,
+    Math.min(page, lastPage),
+    messages[messages.length - 1],
+  );
 };
 
 const showPicker = async (
@@ -399,7 +405,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         );
       if (action === 'tasks' && state.tasks) {
         state.input = undefined;
-        return await showPicker(ctx, state, 0);
+        return await showTasks(ctx, state.today);
       }
       if (action === 'card' && state.selected)
         return await card(ctx, state, state.selected);
@@ -444,7 +450,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           state,
           `${value.slice(0, 2)}:${value.slice(2)}`,
         );
-      if (action === 'page') return await showPicker(ctx, state, Number(value));
+      if (action === 'page')
+        return await showTasks(ctx, state.today, Number(value));
       if (action === 'task') {
         const task = state.tasks?.[Number(value)];
         if (task) await card(ctx, state, task);
@@ -482,14 +489,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         taskData.completed.unshift(live);
         if (!(await saveTasks(taskData, metadata)))
           throw new Error('Storage did not confirm save');
-        const remaining = (state.tasks ?? []).filter(
-          (candidate) => taskFingerprint(candidate) !== taskFingerprint(task),
-        );
-        const refreshed = newState(ctx);
-        refreshed.tasks = remaining;
-        refreshed.today = state.today;
-        rememberTaskNumbers(ctx.from.id, ctx.chat!.id, remaining);
-        await showPicker(ctx, refreshed, 0);
+        await returnToTaskList(ctx);
         return await panelNotice(ctx, `✅ Готово: ${task.name}`, {
           reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
         });
@@ -502,16 +502,14 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         taskData.uncompleted[index] = updated;
         if (!(await saveTasks(taskData, metadata)))
           throw new Error('Save not confirmed');
-        return await card(ctx, state, updated);
+        return await returnToTaskList(ctx);
       }
       if (action === 'q' && /^[1-4]$/.test(value)) {
         const updated = setQuadrant(taskData.uncompleted[index], Number(value));
         taskData.uncompleted[index] = updated;
-        await saveTasks(taskData, metadata);
-        state.tasks = state.tasks?.map((item) =>
-          taskFingerprint(item) === taskFingerprint(task) ? updated : item,
-        );
-        await card(ctx, state, updated);
+        if (!(await saveTasks(taskData, metadata)))
+          throw new Error('Save not confirmed');
+        await returnToTaskList(ctx);
       }
     } catch (error) {
       logAndReplyError(
@@ -545,6 +543,6 @@ export const backToTask = async (ctx: BotContext) => {
   if (!state || state.expires < Date.now()) return await menuCommand(ctx);
   state.input = undefined;
   if (state.selected) return await card(ctx, state, state.selected);
-  if (state.tasks) return await showPicker(ctx, state, 0);
+  if (state.tasks) return await showTasks(ctx, state.today);
   return await menuCommand(ctx);
 };

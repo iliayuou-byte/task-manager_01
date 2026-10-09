@@ -5,7 +5,9 @@ import { enterEditScene } from '../scenes/editTaskScene.js';
 import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
+import { numberedTasks, rememberTaskNumbers } from '../services/taskNumbers.js';
 import { markTaskCompleted, promptCalendarAction } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 
 const TASKS_PER_PAGE = 6;
 const MAX_NAME_LENGTH = 28;
@@ -107,6 +109,8 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
       if (action.startsWith('page_')) {
         const page = parseInt(action.split('_')[1], 10);
         const { taskData } = await queryTasks();
+        if (command === 'complete')
+          return await showCompletePicker(ctx, taskData.uncompleted, page);
 
         let keyboard: InlineKeyboard;
         if (command === 'remove') {
@@ -188,18 +192,23 @@ export const showCompletePicker = async (
   page = 0,
 ) => {
   const lastPage = Math.max(0, Math.ceil(tasks.length / TASKS_PER_PAGE) - 1);
-  return panelReply(
-    ctx,
+  rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, numberedTasks(tasks));
+  const messages = splitMessages([
+    `📚 Незавершённые дела · ${tasks.length}`,
+    '',
+    ...matrixLines(tasks),
+    '',
     tasks.length ? 'Выбери дело, которое выполнено:' : '✅ Все дела выполнены.',
-    {
-      reply_markup: generateTaskPickerKeyboard(
-        tasks,
-        'complete',
-        'u',
-        Math.min(page, lastPage),
-      ),
-    },
-  );
+  ]);
+  for (const message of messages.slice(0, -1)) await panelReply(ctx, message);
+  return panelReply(ctx, messages[messages.length - 1], {
+    reply_markup: generateTaskPickerKeyboard(
+      tasks,
+      'complete',
+      'u',
+      Math.min(page, lastPage),
+    ),
+  });
 };
 
 const handleRemove = async (

@@ -207,3 +207,12 @@ Draft deletion uses `Draft.removed` tombstones in `commands/brain.ts`. Keep orig
 indices stable, skip removed entries in previews/pickers/sequential review and saves,
 and reject old category/delete callbacks for removed entries. Removing the final
 entry invalidates the entire draft without writing storage.
+
+### Task-list refresh after mutations
+
+Task-card completion, field edits, quadrant changes and lock toggles return through
+`returnToTaskList` after confirmed storage saves. Re-query live tasks, preserve the
+Today filter, regenerate display numbers and invalidate prior menu IDs. Back-to-list
+and pagination also render the full live list. `showCompletePicker` includes a
+chunked matrix while retaining completion controls; keep calendar prompts as
+`panelNotice` so they do not replace the refreshed list keyboard.

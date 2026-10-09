@@ -242,6 +242,7 @@ test('manual importance locks a task and the card can unlock it', async () => {
   await f.click(f.button('Важность'));
   await f.click(f.button('Не важно и не срочно'));
   expect(f.data().taskData.uncompleted[0].priorityLocked).toBe(true);
+  await f.click(f.button('Первое'));
   await f.click(f.button('Разрешить ИИ'));
   expect(f.data().taskData.uncompleted[0].priorityLocked).toBe(false);
 });
@@ -489,9 +490,8 @@ test('task card bottom keyboard runs actions and list back without interpreting 
   await f.tap('Важность');
   await f.tap('Не важно и не срочно');
   expect(f.data().taskData.uncompleted[0].important).toBe(false);
-  await f.tap('Назад');
-  expect(f.labels().some((label) => label.includes('1. Первое'))).toBe(true);
-  await f.tap('1. Первое');
+  expect(f.labels().some((label) => label.includes('Первое'))).toBe(true);
+  await f.tap('Первое');
   await f.tap('Готово');
   expect(f.data().taskData.completed[0].name).toBe('Первое');
 });
@@ -847,4 +847,110 @@ test('delete picker removes the last draft task without saving and invalidates o
   expect(f.data().taskData.uncompleted).toHaveLength(2);
   await f.tap('Назад');
   expect(f.labels()).toContain(MENU.add);
+});
+
+test('completion replaces the visible list with fresh storage and rejects its old task buttons', async () => {
+  const f = fixture(590);
+  const listText = () =>
+    String(
+      [...f.calls]
+        .reverse()
+        .find(
+          (call) =>
+            call.text &&
+            call.reply_markup &&
+            'keyboard' in (call.reply_markup as object),
+        )?.text,
+    );
+  await f.text(MENU.all);
+  const oldButton = f.button('1. Первое');
+  const oldList = [...f.calls]
+    .reverse()
+    .find((call) => String(call.text).includes('📚 Все дела'))!;
+  const oldListId = f.calls.indexOf(oldList) + 1;
+  await f.tap('1. Первое');
+  f.data().taskData.uncompleted.push({
+    name: 'Добавлено параллельно',
+    completed: false,
+    tags: [],
+  });
+  await f.tap('Готово');
+  expect(listText()).toContain('📚 Все дела · 2');
+  expect(listText()).toContain('Второе');
+  expect(listText()).toContain('Добавлено параллельно');
+  expect(listText()).not.toContain('Первое');
+  expect(
+    f.calls.some(
+      (call) =>
+        call.method === 'deleteMessage' && call.message_id === oldListId,
+    ),
+  ).toBe(true);
+  await f.click(oldButton);
+  expect(f.data().taskData.completed).toHaveLength(1);
+});
+
+test('editing a task returns to an updated Today list and keeps its task keyboard', async () => {
+  const f = fixture(591);
+  f.data().taskData.uncompleted[1].date = '2099-01-01';
+  await f.text(MENU.today);
+  await f.tap('1. Первое');
+  await f.tap('Изменить');
+  await f.tap('Tags');
+  await f.text('#work');
+  const list = [...f.calls]
+    .reverse()
+    .find(
+      (call) =>
+        call.text &&
+        call.reply_markup &&
+        'keyboard' in (call.reply_markup as object),
+    );
+  expect(String(list?.text)).toContain('📋 Сегодня');
+  expect(String(list?.text)).toContain('#work');
+  expect(String(list?.text)).not.toContain('Второе');
+  expect(f.labels()).toContain('1. Первое');
+  await f.tap('1. Первое');
+  expect(f.labels()).toContain('✅ Готово');
+});
+
+test('importance changes refresh matrix ordering and selection numbers immediately', async () => {
+  const f = fixture(592);
+  await f.text(MENU.all);
+  await f.tap('2. Второе');
+  await f.tap('Важность');
+  await f.tap('Важно и срочно');
+  const list = [...f.calls]
+    .reverse()
+    .find(
+      (call) =>
+        call.text &&
+        call.reply_markup &&
+        'keyboard' in (call.reply_markup as object),
+    );
+  expect(String(list?.text)).toContain('🔴 Важно и срочно · 1\n1. Второе');
+  expect(f.labels()).toContain('1. Второе');
+  await f.tap('1. Второе');
+  await f.tap('Готово');
+  expect(f.data().taskData.completed[0].name).toBe('Второе');
+});
+
+test('editing a date out of Today shows an empty list without stale task buttons', async () => {
+  const f = fixture(593);
+  f.data().taskData.uncompleted[1].date = '2099-01-01';
+  await f.text(MENU.today);
+  await f.tap('1. Первое');
+  await f.tap('Изменить');
+  await f.tap('Date');
+  await f.text('2099-01-02');
+  const list = [...f.calls]
+    .reverse()
+    .find(
+      (call) =>
+        call.text &&
+        call.reply_markup &&
+        'keyboard' in (call.reply_markup as object),
+    );
+  expect(String(list?.text)).toContain('📋 Сегодня');
+  expect(String(list?.text)).not.toContain('Первое');
+  expect(f.labels().some((label) => label.includes('Первое'))).toBe(false);
 });
