@@ -2,6 +2,7 @@ import { InlineKeyboard, Keyboard } from 'grammy';
 
 export const MENU = {
   today: '📋 Сегодня',
+  plan: '🗓 План дня',
   all: '📚 Все дела',
   add: '➕ Добавить',
   now: '🎯 Что сейчас',
@@ -23,6 +24,8 @@ export const mainKeyboard = () =>
     .row()
     .text(MENU.settings)
     .text(MENU.chat)
+    .row()
+    .text(MENU.plan)
     .resized()
     .persistent();
 

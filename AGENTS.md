@@ -216,3 +216,16 @@ Today filter, regenerate display numbers and invalidate prior menu IDs. Back-to-
 and pagination also render the full live list. `showCompletePicker` includes a
 chunked matrix while retaining completion controls; keep calendar prompts as
 `panelNotice` so they do not replace the refreshed list keyboard.
+
+### Day planner
+
+`commands/day.ts` manages user/chat-bound expiring draft screens and explicit timed
+creation/completion/deferral. Register before menu and edit/add input handlers.
+`services/dayPlanner.ts` computes nonpersistent proposals around recurring weekly
+busy slots and explicit task times; reports conflicts/overflow and derives completion
+counts from existing logs. Never treat proposed intervals as deadlines or silently
+write them to a calendar. GitHub frontmatter persists JSON-encoded
+`planner_preferences`, `planner_notify_times`, and `planner_last_sent` per profile.
+Planner digests run inside the existing scoped reminder loop even when ordinary
+reminders are off. Calendar/mail imports are future integrations; pasted mail text
+must still go through brain confirmation.

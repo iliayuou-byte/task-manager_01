@@ -77,9 +77,19 @@ export const parseMarkdown = (content: string): ParseResult => {
         if (
           key === 'reminder_times' ||
           key === 'reminder_last_sent' ||
-          key === 'reminder_saved_times'
+          key === 'reminder_saved_times' ||
+          key === 'planner_notify_times' ||
+          key === 'planner_last_sent'
         ) {
           metadata[key] = value;
+        } else if (key === 'planner_preferences') {
+          try {
+            const preferences: unknown = JSON.parse(value);
+            if (typeof preferences === 'string')
+              metadata.planner_preferences = preferences;
+          } catch {
+            /* Invalid configuration is not imported. */
+          }
         } else if (key === 'ai_auto_priority') {
           metadata.ai_auto_priority = value;
         } else if (key === 'ai_priority_rules') {
@@ -266,6 +276,14 @@ export const serializeTaskMarkdown = (
   const lines: string[] = [];
 
   lines.push('---');
+  if (metadata.planner_preferences)
+    lines.push(
+      `planner_preferences: ${JSON.stringify(metadata.planner_preferences)}`,
+    );
+  if (metadata.planner_notify_times)
+    lines.push(`planner_notify_times: ${metadata.planner_notify_times}`);
+  if (metadata.planner_last_sent)
+    lines.push(`planner_last_sent: ${metadata.planner_last_sent}`);
   if (metadata.ai_auto_priority)
     lines.push(`ai_auto_priority: ${metadata.ai_auto_priority}`);
   if (metadata.ai_priority_rules)

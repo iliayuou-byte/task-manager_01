@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test';
+import { afterEach, expect, setSystemTime, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,12 +18,14 @@ import {
   registerPendingInputs,
   retryPendingInputsOnce,
 } from '../services/pendingInputs.js';
+import { checkReminders } from '../services/reminders.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
 import { registerAssistant } from './assistant.js';
 import { registerBrainActions } from './brain.js';
 import { completeCommand } from './complete.js';
+import { registerDayPlanner } from './day.js';
 import { registerMenu } from './menu.js';
 import { registerSelectedRemoval } from './removeSelected.js';
 
@@ -94,6 +96,7 @@ const fixture = (user: number) => {
   });
   registerContextKeyboard(bot);
   registerAiSettings(bot);
+  registerDayPlanner(bot);
   registerMenu(bot);
   registerPendingInputs(bot);
   registerBrainActions(bot);
@@ -448,7 +451,7 @@ test('home invalidates pending deletion even if an old button survives cleanup',
   ).toContain('устарело');
 });
 
-test('main keyboard has six sections; settings replaces it and back restores it', async () => {
+test('main keyboard has seven sections; settings replaces it and back restores it', async () => {
   const f = fixture(512);
   await f.text(MENU.home);
   expect(f.labels()).toEqual([
@@ -458,6 +461,7 @@ test('main keyboard has six sections; settings replaces it and back restores it'
     MENU.now,
     MENU.settings,
     MENU.chat,
+    MENU.plan,
   ]);
   await f.tap('Настройки');
   expect(f.labels()).toContain('🔔 Напоминания');
@@ -477,6 +481,7 @@ test('main keyboard has six sections; settings replaces it and back restores it'
     MENU.now,
     MENU.settings,
     MENU.chat,
+    MENU.plan,
   ]);
 });
 
@@ -953,4 +958,106 @@ test('editing a date out of Today shows an empty list without stale task buttons
   expect(String(list?.text)).toContain('📋 Сегодня');
   expect(String(list?.text)).not.toContain('Первое');
   expect(f.labels().some((label) => label.includes('Первое'))).toBe(false);
+});
+
+test('day planner creates timed tasks only after confirmation and home invalidates an old save', async () => {
+  const f = fixture(600);
+  await f.text(MENU.plan);
+  await f.tap('Дело со временем');
+  await f.text('Работа над Kür');
+  await f.tap('Завтра');
+  await f.text('18:00-19:30');
+  const oldSave = f.button('Сохранить');
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.tap('🏠 Меню');
+  await f.click(oldSave);
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.text(MENU.plan);
+  await f.tap('Дело со временем');
+  await f.text('Работа над Kür');
+  await f.tap('Завтра');
+  await f.text('18:00-19:30');
+  await f.tap('Сохранить');
+  expect(
+    f
+      .data()
+      .taskData.uncompleted.find((task) => task.name === 'Работа над Kür'),
+  ).toMatchObject({ time: '18:00', duration: '01:30' });
+});
+test('planner weekly schedule and notification settings persist without mutating task contents', async () => {
+  const f = fixture(601);
+  await f.text(MENU.plan);
+  await f.tap('Расписание');
+  await f.tap('Занятые часы');
+  await f.text('Лекции');
+  await f.tap('Пн–Пт');
+  await f.text('09:00-12:00');
+  await f.tap('Сохранить');
+  expect(
+    JSON.parse(f.data().metadata.planner_preferences!).busy[0],
+  ).toMatchObject({
+    name: 'Лекции',
+    days: [1, 2, 3, 4, 5],
+    start: '09:00',
+    end: '12:00',
+  });
+  await f.text(MENU.plan);
+  await f.tap('Планировка');
+  await f.tap('Утро и вечер');
+  await f.text('08:00 21:00');
+  expect(f.data().metadata.planner_notify_times).toBe('08:00,21:00');
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.tap('Утро и вечер');
+  await f.tap('Выключить');
+  expect(f.data().metadata.planner_notify_times).toBe('off');
+});
+
+test('planner sends a morning plan and evening summary once per slot even with ordinary reminders off', async () => {
+  const previous = process.env.TELEGRAM_BOT_ALLOWLIST;
+  process.env.TELEGRAM_BOT_ALLOWLIST = '602';
+  try {
+    const f = fixture(602);
+    f.data().metadata.planner_notify_times = '08:00,21:00';
+    f.data().metadata.reminder_times = 'off';
+    await checkReminders(f.bot, new Date('2026-10-09T06:00:00Z'));
+    await checkReminders(f.bot, new Date('2026-10-09T06:01:00Z'));
+    expect(
+      f.calls.filter((call) => String(call.text).includes('Доброе утро')),
+    ).toHaveLength(1);
+    await checkReminders(f.bot, new Date('2026-10-09T19:00:00Z'));
+    expect(
+      f.calls.filter((call) => String(call.text).includes('Вечерний обзор')),
+    ).toHaveLength(1);
+    expect(f.data().metadata.planner_last_sent).toBe('2026-10-09T21:00');
+  } finally {
+    if (previous === undefined) delete process.env.TELEGRAM_BOT_ALLOWLIST;
+    else process.env.TELEGRAM_BOT_ALLOWLIST = previous;
+  }
+});
+
+test('next-step completion updates the daily tracker; explicit deferral and stale cards cannot complete the wrong task', async () => {
+  setSystemTime(new Date('2026-10-09T10:00:00Z'));
+  try {
+    const f = fixture(603);
+    await f.text(MENU.plan);
+    await f.tap('Следующий шаг');
+    const stale = f.button('Готово');
+    await f.tap('Готово');
+    expect(f.data().taskData.completed[0].name).toBe('Первое');
+    expect(f.data().taskData.completed[0].log).toContain(
+      'Completed 2026-10-09',
+    );
+    await f.tap('Следующий шаг');
+    await f.tap('На завтра');
+    expect(f.data().taskData.uncompleted[0].date).toBe('2026-10-10');
+    await f.click(stale);
+    expect(f.data().taskData.completed).toHaveLength(1);
+    await f.text(MENU.plan);
+    await f.tap('Итог дня');
+    expect(
+      String([...f.calls].reverse().find((call) => call.text)?.text),
+    ).toContain('Завершено: 1');
+  } finally {
+    setSystemTime();
+  }
 });

@@ -3,6 +3,7 @@ import type { Bot } from 'grammy';
 import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
+import { buildDayPlan, dayPlanText, daySummaryText } from './dayPlanner.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
 import { rememberTaskNumbers } from './taskNumbers.js';
@@ -48,6 +49,7 @@ const checkUserReminders = async (
   userId: number,
   now: Date,
 ) => {
+  await sendPlannerDigest(bot, userId, now);
   const { taskData, metadata } = await queryTasks();
   if (
     !metadata.timezone ||
@@ -83,6 +85,41 @@ const checkUserReminders = async (
   const latest = await queryTasks();
   latest.metadata.reminder_last_sent = slot;
   await saveTasks(latest.taskData, latest.metadata);
+};
+
+const sendPlannerDigest = async (
+  bot: Bot<BotContext>,
+  userId: number,
+  now: Date,
+) => {
+  const { taskData, metadata } = await queryTasks();
+  if (
+    !metadata.timezone ||
+    !metadata.planner_notify_times ||
+    metadata.planner_notify_times === 'off'
+  )
+    return;
+  const times = parseReminderTimes(metadata.planner_notify_times);
+  if (times.length !== 2)
+    throw new Error('Planner requires morning and evening times');
+  const slot = dueReminderSlot(
+    times,
+    now,
+    metadata.timezone,
+    metadata.planner_last_sent,
+  );
+  if (!slot) return;
+  const plan = buildDayPlan(taskData, metadata, now);
+  const text =
+    slot.slice(11) === times[0]
+      ? `☀️ Доброе утро!\n\n${dayPlanText(plan)}`
+      : `🌙 Вечерний обзор\n\n${daySummaryText(plan)}`;
+  for (const message of splitMessages(text.split('\n')))
+    await bot.api.sendMessage(userId, message);
+  const latest = await queryTasks();
+  latest.metadata.planner_last_sent = slot;
+  if (!(await saveTasks(latest.taskData, latest.metadata)))
+    throw new Error('Planner delivery was not recorded');
 };
 
 let running = false;

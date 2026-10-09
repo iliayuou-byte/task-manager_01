@@ -1,0 +1,549 @@
+import { randomUUID } from 'node:crypto';
+import { addDays, format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
+import { type Composer, InlineKeyboard } from 'grammy';
+import type { Task } from '../core/types.js';
+import type { BotContext } from '../middlewares/session.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
+import {
+  buildDayPlan,
+  clockMinutes,
+  dayPlanText,
+  daySummaryText,
+  minuteClock,
+  type PlannerPreferences,
+  parseWindow,
+  plannerPreferences,
+} from '../services/dayPlanner.js';
+import { queryTasks } from '../services/queryTasks.js';
+import { saveTasks } from '../services/saveTasks.js';
+import { taskFingerprint } from '../services/taskNumbers.js';
+import { logAndReplyError, markTaskCompleted } from '../utils/index.js';
+import { splitMessages } from '../views/eisenhowerView.js';
+import { MENU } from '../views/menuView.js';
+import { cancelBrainDrafts, processBrainInput } from './brain.js';
+import { cancelRemovalDrafts } from './removeSelected.js';
+
+interface DayState {
+  id: string;
+  expires: number;
+  busy?: boolean;
+  step?: string;
+  kind?: 'task' | 'busy';
+  name?: string;
+  date?: string;
+  days?: number[];
+  window?: { start: string; end: string };
+  task?: Task;
+  original?: string;
+}
+const states = new Map<string, DayState>();
+const key = (ctx: BotContext) => `${ctx.from!.id}:${ctx.chat!.id}`;
+const fresh = (ctx: BotContext): DayState => {
+  for (const [id, state] of states)
+    if (state.expires < Date.now()) states.delete(id);
+  const state = {
+    id: randomUUID().slice(0, 8),
+    expires: Date.now() + 30 * 60_000,
+  };
+  states.set(key(ctx), state);
+  cancelBrainDrafts(ctx);
+  cancelRemovalDrafts(ctx);
+  ctx.session.assistant = undefined;
+  ctx.session.editScene = undefined;
+  ctx.session.awaitingAdd = undefined;
+  return state;
+};
+const keyboard = (state: DayState, buttons: [string, string][]) => {
+  const result = new InlineKeyboard();
+  for (const [label, action] of buttons)
+    result.text(label, `day:${action}:${state.id}`).row();
+  return result
+    .text('⬅️ Назад', `day:back:${state.id}`)
+    .text('🏠 Меню', 'menu:home');
+};
+const screen = async (
+  ctx: BotContext,
+  text: string,
+  state: DayState,
+  buttons: [string, string][],
+) => {
+  const messages = splitMessages(text.split('\n'));
+  for (const message of messages.slice(0, -1)) await panelReply(ctx, message);
+  return panelReply(ctx, messages[messages.length - 1], {
+    reply_markup: keyboard(state, buttons),
+  });
+};
+export const openDay = async (ctx: BotContext) => {
+  if (process.env.STORAGE_PROVIDER === 'notion')
+    return panelReply(
+      ctx,
+      'Планировщик пока требует хранилище GitHub для сохранения расписания.',
+    );
+  const state = fresh(ctx);
+  const { metadata } = await queryTasks();
+  if (!metadata.timezone)
+    return panelReply(ctx, 'Сначала выбери часовой пояс в настройках.');
+  return screen(
+    ctx,
+    '🗓 День\n\nПлан учитывает занятые часы и дела со временем. Свободные дела предлагаю разместить по приоритету — ты решаешь, что выполнять.',
+    state,
+    [
+      ['📋 План на сегодня', 'plan'],
+      ['🎯 Следующий шаг', 'next'],
+      ['➕ Дело со временем', 'new'],
+      ['🕒 Расписание', 'schedule'],
+      ['📊 Итог дня', 'summary'],
+      ['⚙️ Планировка и источники', 'settings'],
+    ],
+  );
+};
+const showPlan = async (ctx: BotContext, summary = false) => {
+  const { taskData, metadata } = await queryTasks();
+  const state = fresh(ctx);
+  const plan = buildDayPlan(taskData, metadata);
+  return screen(
+    ctx,
+    summary ? daySummaryText(plan) : dayPlanText(plan),
+    state,
+    [
+      ['🎯 Следующий шаг', 'next'],
+      ['➕ Дело со временем', 'new'],
+      ['🔄 Обновить', 'plan'],
+    ],
+  );
+};
+const showSchedule = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const preferences = plannerPreferences(metadata);
+  const state = fresh(ctx);
+  state.original = metadata.planner_preferences;
+  const days = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  return screen(
+    ctx,
+    [
+      '🕒 Еженедельное расписание',
+      '',
+      ...preferences.busy.map(
+        (slot) =>
+          `▪️ ${slot.name} · ${slot.days.map((day) => days[day]).join(', ')} · ${slot.start}–${slot.end}`,
+      ),
+      ...(!preferences.busy.length ? ['Занятые часы пока не заданы.'] : []),
+      '',
+      'Занятия и встречи исключаются из свободного времени. Это блоки расписания, а не завершённые дела.',
+    ].join('\n'),
+    state,
+    [
+      ['➕ Занятые часы', 'busy'],
+      ...preferences.busy.map(
+        (slot) =>
+          [`🗑 ${slot.name.slice(0, 30)}`, `drop~${slot.id}`] as [
+            string,
+            string,
+          ],
+      ),
+    ],
+  );
+};
+const showSettings = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const preferences = plannerPreferences(metadata);
+  const state = fresh(ctx);
+  state.original = metadata.planner_preferences;
+  return screen(
+    ctx,
+    `⚙️ Планировка\n\nПланируемое время: ${preferences.start}–${preferences.end}.\nУтренний план / вечерний итог: ${metadata.planner_notify_times || 'выключены'}.\n\nИсточники: расписание и дела бота. Текст письма можно вставить для разбора. Автоматическое чтение Google Calendar и почты ещё не подключено.`,
+    state,
+    [
+      ['🕒 Часы планирования', 'hours'],
+      ['🔔 Утро и вечер', 'notify'],
+      ['📨 Дело из письма', 'mail'],
+    ],
+  );
+};
+const savePreferences = async (
+  _ctx: BotContext,
+  state: DayState,
+  update: (value: PlannerPreferences) => PlannerPreferences,
+) => {
+  const latest = await queryTasks();
+  if (latest.metadata.planner_preferences !== state.original)
+    throw new Error('Расписание изменилось. Открой его заново.');
+  latest.metadata.planner_preferences = JSON.stringify(
+    update(plannerPreferences(latest.metadata)),
+  );
+  if (!(await saveTasks(latest.taskData, latest.metadata)))
+    throw new Error('Не удалось сохранить расписание.');
+};
+const dateScreen = async (ctx: BotContext, state: DayState) => {
+  state.step = 'date';
+  return screen(
+    ctx,
+    `➕ ${state.name}\n\nНа какой день? Для другой даты введи YYYY-MM-DD.`,
+    state,
+    [
+      ['Сегодня', 'today'],
+      ['Завтра', 'tomorrow'],
+    ],
+  );
+};
+const confirm = async (ctx: BotContext, state: DayState) => {
+  state.step = undefined;
+  return screen(
+    ctx,
+    `Проверка перед сохранением\n\n${state.name}\n${state.kind === 'busy' ? 'Еженедельно' : state.date} · ${state.window!.start}–${state.window!.end}\n\n${state.kind === 'busy' ? 'Занятые часы будут исключены из плана.' : 'Интервал работы, не дедлайн.'}`,
+    state,
+    [
+      ['✅ Сохранить', 'save'],
+      ['✏️ Изменить время', 'window'],
+    ],
+  );
+};
+export const registerDayPlanner = (composer: Composer<BotContext>) => {
+  composer.command('day', openDay);
+  composer.on('message:text', async (ctx, next) => {
+    if (ctx.chat.type !== 'private') return next();
+    const text = ctx.message.text.trim();
+    const state = states.get(key(ctx));
+    if (text === MENU.plan) return openDay(ctx);
+    if (
+      text.startsWith('/') ||
+      Object.values(MENU).some((label) => label === text)
+    ) {
+      states.delete(key(ctx));
+      return next();
+    }
+    if (!state || state.expires < Date.now() || !state.step) return next();
+    if (state.busy) return;
+    state.busy = true;
+    try {
+      if (state.step === 'mail') {
+        states.delete(key(ctx));
+        return await processBrainInput(ctx, text);
+      }
+      if (state.step === 'name') {
+        if (!text || text.length > 120)
+          throw new Error('Название: от 1 до 120 символов.');
+        state.name = text;
+        if (state.kind === 'task') return await dateScreen(ctx, state);
+        state.step = undefined;
+        return await screen(ctx, 'Выбери дни повторения:', state, [
+          ['Каждый день', 'days~all'],
+          ['Пн–Пт', 'days~week'],
+          ...['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(
+            (name, index) => [name, `days~${index + 1}`] as [string, string],
+          ),
+        ]);
+      }
+      if (state.step === 'date') {
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(text) ||
+          Number.isNaN(Date.parse(text)) ||
+          new Date(`${text}T12:00:00Z`).toISOString().slice(0, 10) !== text
+        )
+          throw new Error('Укажи существующую дату: YYYY-MM-DD.');
+        state.date = text;
+        state.step = 'window';
+        return await screen(
+          ctx,
+          'Введи время начала и окончания: 18:00-19:30.',
+          state,
+          [],
+        );
+      }
+      if (state.step === 'hours') {
+        const window = parseWindow(text);
+        await savePreferences(ctx, state, (preferences) => ({
+          ...preferences,
+          ...window,
+        }));
+        return await showSettings(ctx);
+      }
+      if (state.step === 'notify') {
+        const times = text.split(/[\s,]+/);
+        if (
+          times.length !== 2 ||
+          clockMinutes(times[0]) >= clockMinutes(times[1])
+        )
+          throw new Error('Укажи утро и вечер: 08:00 21:00.');
+        const latest = await queryTasks();
+        latest.metadata.planner_notify_times = times.join(',');
+        if (!(await saveTasks(latest.taskData, latest.metadata)))
+          throw new Error('Не удалось сохранить уведомления.');
+        return await showSettings(ctx);
+      }
+      if (state.step === 'window') {
+        state.window = parseWindow(text);
+        return await confirm(ctx, state);
+      }
+    } catch (error) {
+      await panelReply(
+        ctx,
+        error instanceof Error ? error.message : 'Не удалось обработать ввод.',
+        { reply_markup: keyboard(state, []) },
+      );
+    } finally {
+      state.busy = false;
+    }
+  });
+  composer.on('callback_query:data', async (ctx, next) => {
+    if (!ctx.callbackQuery.data.startsWith('day:')) {
+      states.delete(key(ctx));
+      return next();
+    }
+    if (ctx.chat?.type !== 'private') return;
+    const [, action, id] = ctx.callbackQuery.data.split(':');
+    const state = states.get(key(ctx));
+    if (id && (!state || state.id !== id || state.expires < Date.now())) {
+      await ctx.answerCallbackQuery({
+        text: 'Экран устарел. Открой «План дня».',
+      });
+      return;
+    }
+    if (state?.busy) {
+      await ctx.answerCallbackQuery({ text: 'Сохраняю…' });
+      return;
+    }
+    if (state) state.busy = true;
+    try {
+      await ctx.answerCallbackQuery();
+      if (action === 'home') return await openDay(ctx);
+      if (action === 'plan') return await showPlan(ctx);
+      if (action === 'summary') return await showPlan(ctx, true);
+      if (action === 'schedule') return await showSchedule(ctx);
+      if (action === 'settings') return await showSettings(ctx);
+      if (!state) return;
+      if (action === 'back') {
+        if (state.step === 'date') {
+          state.step = 'name';
+          return await screen(ctx, 'Как называется дело?', state, []);
+        }
+        if (state.step === 'window' && state.kind === 'task')
+          return await dateScreen(ctx, state);
+        if (state.step === 'window' && state.kind === 'busy') {
+          state.step = 'name';
+          return await screen(
+            ctx,
+            'Как называется блок расписания? Затем выберем дни повторения.',
+            state,
+            [],
+          );
+        }
+        return await openDay(ctx);
+      }
+      if (action === 'mail') {
+        state.step = 'mail';
+        return await screen(
+          ctx,
+          '📨 Вставь текст письма. Покажу черновик дел перед сохранением. Доступ к почтовому ящику для этого не нужен.',
+          state,
+          [],
+        );
+      }
+      if (action === 'hours') {
+        state.step = 'hours';
+        return await screen(
+          ctx,
+          'Укажи часы для планирования: 09:00-22:00.',
+          state,
+          [],
+        );
+      }
+      if (action === 'notify') {
+        state.step = 'notify';
+        return await screen(
+          ctx,
+          'Укажи время утреннего плана и вечернего итога: 08:00 21:00. Сообщения приходят, пока сервер бота работает.',
+          state,
+          [['🔕 Выключить', 'off']],
+        );
+      }
+      if (action === 'off') {
+        const latest = await queryTasks();
+        latest.metadata.planner_notify_times = 'off';
+        if (!(await saveTasks(latest.taskData, latest.metadata)))
+          throw new Error('Сохранение не подтверждено.');
+        return await showSettings(ctx);
+      }
+      if (action === 'new' || action === 'busy') {
+        const draft = fresh(ctx);
+        draft.kind = action === 'new' ? 'task' : 'busy';
+        draft.step = 'name';
+        draft.original = (await queryTasks()).metadata.planner_preferences;
+        return await screen(
+          ctx,
+          action === 'new'
+            ? 'Как называется дело?'
+            : 'Что занимает время? Например «Лекции» или «Тренировка».',
+          draft,
+          [],
+        );
+      }
+      if (action === 'today' || action === 'tomorrow') {
+        const { metadata } = await queryTasks();
+        const date = formatInTimeZone(
+          new Date(),
+          metadata.timezone || 'UTC',
+          'yyyy-MM-dd',
+        );
+        state.date =
+          action === 'today'
+            ? date
+            : format(addDays(new Date(`${date}T12:00:00`), 1), 'yyyy-MM-dd');
+        state.step = 'window';
+        return await screen(
+          ctx,
+          'Введи время начала и окончания: 18:00-19:30.',
+          state,
+          [],
+        );
+      }
+      if (action.startsWith('days~')) {
+        const days = action.split('~')[1];
+        if (state.kind !== 'busy' || !/^(all|week|[1-7])$/.test(days)) return;
+        state.days =
+          days === 'all'
+            ? [1, 2, 3, 4, 5, 6, 7]
+            : days === 'week'
+              ? [1, 2, 3, 4, 5]
+              : [Number(days)];
+        state.step = 'window';
+        return await screen(
+          ctx,
+          'Введи занятый интервал: 09:00-12:30.',
+          state,
+          [],
+        );
+      }
+      if (action === 'window') {
+        state.step = 'window';
+        return await screen(
+          ctx,
+          'Введи новый интервал: 18:00-19:30.',
+          state,
+          [],
+        );
+      }
+      if (action.startsWith('drop~')) {
+        await savePreferences(ctx, state, (p) => ({
+          ...p,
+          busy: p.busy.filter((slot) => slot.id !== action.split('~')[1]),
+        }));
+        return await showSchedule(ctx);
+      }
+      if (action === 'save') {
+        if (!state.name || !state.window || !state.kind)
+          throw new Error('Черновик неполный. Начни заново.');
+        if (state.kind === 'busy') {
+          if (!state.days?.length) throw new Error('Выбери дни.');
+          await savePreferences(ctx, state, (p) => {
+            if (p.busy.length >= 30)
+              throw new Error('Максимум 30 блоков расписания.');
+            return {
+              ...p,
+              busy: [
+                ...p.busy,
+                {
+                  id: randomUUID().slice(0, 8),
+                  name: state.name!,
+                  days: state.days!,
+                  ...state.window!,
+                },
+              ],
+            };
+          });
+          return await showSchedule(ctx);
+        }
+        const latest = await queryTasks();
+        if (
+          !state.date ||
+          latest.taskData.uncompleted.some((task) => task.name === state.name)
+        )
+          throw new Error('Укажи дату и уникальное название дела.');
+        const minutes =
+          clockMinutes(state.window.end) - clockMinutes(state.window.start);
+        const task: Task = {
+          name: state.name,
+          completed: false,
+          tags: [],
+          date: state.date,
+          time: state.window.start,
+          duration: minuteClock(minutes),
+        };
+        latest.taskData.uncompleted.push(task);
+        if (!(await saveTasks(latest.taskData, latest.metadata)))
+          throw new Error('Сохранение не подтверждено.');
+        await showPlan(ctx);
+        return await panelNotice(
+          ctx,
+          `✅ Добавлено: ${task.name} · ${task.date} ${task.time}`,
+        );
+      }
+      if (action === 'next') {
+        const latest = await queryTasks();
+        const plan = buildDayPlan(latest.taskData, latest.metadata);
+        const item = plan.items.find((item) => item.end > plan.clock);
+        if (!item)
+          return await screen(
+            ctx,
+            plan.overflow.length
+              ? 'На сегодня свободного времени не осталось. Посмотри план и выбери, что перенести.'
+              : 'На сегодня следующих шагов нет.',
+            fresh(ctx),
+            [['📋 План', 'plan']],
+          );
+        const card = fresh(ctx);
+        card.task = structuredClone(item.task);
+        return await screen(
+          ctx,
+          `🎯 Следующий шаг\n\n${item.task.name}\n${minuteClock(item.start)}–${minuteClock(item.end)}${item.start > plan.clock ? '\nНачало позже — сейчас можно сделать паузу.' : ''}`,
+          card,
+          [
+            ['✅ Готово', 'done'],
+            ['⏭ На завтра', 'defer'],
+            ['📋 План', 'plan'],
+          ],
+        );
+      }
+      if ((action === 'done' || action === 'defer') && state.task) {
+        const latest = await queryTasks();
+        const index = latest.taskData.uncompleted.findIndex(
+          (task) => taskFingerprint(task) === taskFingerprint(state.task!),
+        );
+        if (index < 0) throw new Error('Дело изменилось. Обнови план.');
+        const task = latest.taskData.uncompleted[index];
+        if (action === 'done') {
+          latest.taskData.uncompleted.splice(index, 1);
+          markTaskCompleted(task, latest.metadata.timezone);
+          latest.taskData.completed.unshift(task);
+        } else {
+          const date = formatInTimeZone(
+            new Date(),
+            latest.metadata.timezone || 'UTC',
+            'yyyy-MM-dd',
+          );
+          task.date = format(
+            addDays(new Date(`${date}T12:00:00`), 1),
+            'yyyy-MM-dd',
+          );
+        }
+        if (!(await saveTasks(latest.taskData, latest.metadata)))
+          throw new Error('Сохранение не подтверждено.');
+        await showPlan(ctx);
+        return await panelNotice(
+          ctx,
+          `${action === 'done' ? '✅ Готово' : '⏭ Перенесено на завтра'}: ${task.name}`,
+        );
+      }
+    } catch (error) {
+      await logAndReplyError(
+        ctx,
+        'DAY_PLANNER',
+        error,
+        'Не удалось выполнить действие. Проверь ввод и открой «План дня» заново.',
+      );
+    } finally {
+      if (state) state.busy = false;
+    }
+  });
+};
