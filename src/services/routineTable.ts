@@ -91,7 +91,10 @@ export const parseRoutineTable = (source: string): RoutineBlock[] => {
   });
   return parseRoutineBlocks(blocks.join('\n'));
 };
-export const exportRoutineTable = (blocks: RoutineBlock[]): string => {
+export const exportRoutineTable = (
+  blocks: RoutineBlock[],
+  separator: ',' | ';' = ',',
+): string => {
   const quote = (value: string) =>
     `"${(/^[=+@-]/.test(value) ? "'" : '') + value.replace(/"/g, '""')}"`;
   return (
@@ -100,7 +103,7 @@ export const exportRoutineTable = (blocks: RoutineBlock[]): string => {
       ['Начало', 'Конец', 'Занятие'],
       ...blocks.map((block) => [block.start, block.end, block.name]),
     ]
-      .map((row) => row.map(quote).join(','))
+      .map((row) => row.map(quote).join(separator))
       .join('\r\n')
   );
 };

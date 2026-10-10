@@ -66,3 +66,13 @@ test('download validates UTF-8, HTTP status and actual streamed size', async () 
   await expect(readRoutineTable(new Response(stream))).rejects.toThrow('64 КБ');
   expect(cancelled).toBe(true);
 });
+
+test('Excel semicolon export round trips separator characters without affecting comma export', () => {
+  const blocks = [{ start: '08:00', end: '08:30', name: 'Кофе; чай, завтрак' }];
+  const excel = exportRoutineTable(blocks, ';');
+  expect(excel.split('\r\n')[0]).toBe('\uFEFF"Начало";"Конец";"Занятие"');
+  expect(parseRoutineTable(excel)).toEqual(blocks);
+  expect(exportRoutineTable(blocks).split('\r\n')[0]).toBe(
+    '\uFEFF"Начало","Конец","Занятие"',
+  );
+});

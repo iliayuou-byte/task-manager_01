@@ -243,10 +243,11 @@ const showTableEditor = async (ctx: BotContext, state: DayState) => {
   state.step = undefined;
   return screen(
     ctx,
-    `📑 ${state.template!.name} · редактор таблицы\n\nСкачай CSV и открой в Numbers, Excel или Google Sheets. В Notion импортируй CSV в таблицу.\n\nКолонки: Начало | Конец | Занятие. Время — текст HH:MM. Можно добавлять, удалять и переставлять строки.\n\nЗатем выбери «Загрузить таблицу» и отправь CSV UTF-8 либо вставь скопированные строки таблицы. Импорт заменит блоки черновика; назначение дней останется. Проверишь результат и сохранишь отдельно.`,
+    `📑 ${state.template!.name} · редактор таблицы\n\nДля Excel выбери CSV с точкой с запятой (;). Если колонки не разделились, импортируй файл и укажи разделитель вручную. Для Notion и Google Sheets есть CSV с запятыми (,).\n\nКолонки: Начало | Конец | Занятие. Время — текст HH:MM. Можно добавлять, удалять и переставлять строки.\n\nЗатем выбери «Загрузить таблицу» и отправь CSV UTF-8 либо вставь скопированные строки таблицы. Импорт заменит блоки черновика; назначение дней останется. Проверишь результат и сохранишь отдельно.`,
     state,
     [
-      ['📥 Скачать CSV', 'templateExport'],
+      ['📥 Скачать CSV (Excel ;)', 'templateExport'],
+      ['📥 CSV (Notion ,)', 'templateExportComma'],
       ['📤 Загрузить таблицу', 'templateImport'],
     ],
   );
@@ -509,14 +510,19 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
       if (action.startsWith('template') && state.template) {
         if (action === 'templateTable')
           return await showTableEditor(ctx, state);
-        if (action === 'templateExport') {
+        if (action === 'templateExport' || action === 'templateExportComma') {
           await ctx.replyWithDocument(
             new InputFile(
-              Buffer.from(exportRoutineTable(state.template.blocks)),
-              `routine-${state.template.id}.csv`,
+              Buffer.from(
+                exportRoutineTable(
+                  state.template.blocks,
+                  action === 'templateExport' ? ';' : ',',
+                ),
+              ),
+              `routine-${state.template.id}-${action === 'templateExport' ? 'excel' : 'comma'}.csv`,
             ),
             {
-              caption: `${state.template.name} · редактируй колонки Начало, Конец, Занятие. Затем загрузи таблицу в этой карточке.`,
+              caption: `${state.template.name} · разделитель: ${action === 'templateExport' ? 'точка с запятой (;)' : 'запятая (,)'}. Редактируй колонки Начало, Конец, Занятие. Затем загрузи таблицу в этой карточке.`,
             },
           );
           return await showTableEditor(ctx, state);
