@@ -413,7 +413,7 @@ const showFireTvSettings = async (ctx: BotContext) => {
   const keyboard = new InlineKeyboard()
     .text('🌐 Указать IP', `menu:tvhost:${state.id}`)
     .row()
-    .text('🎵 Список видео', `menu:tvmedia:${state.id}`)
+    .text('🎵 Текущая музыка', `menu:tvlist:${state.id}`)
     .row()
     .text('▶️ Проверить видео на ТВ', `menu:tvtest:${state.id}`)
     .row()
@@ -431,13 +431,34 @@ const showFireTvSettings = async (ctx: BotContext) => {
   );
 };
 
+const showFireTvMedia = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const media = metadata.fire_tv_media
+    ? parseFireTvMedia(metadata.fire_tv_media)
+    : [];
+  const state = newState(ctx);
+  const keyboard = new InlineKeyboard()
+    .text('✏️ Изменить список', `menu:tvmedia:${state.id}`)
+    .row()
+    .text('⬅️ Телевизор', 'menu:tv')
+    .text('🏠 Меню', 'menu:home');
+  await panelReply(
+    ctx,
+    media.length
+      ? `🎵 Музыка для утреннего запуска · ${media.length}\n\n${media.map((url, index) => `${index + 1}. ${url}`).join('\n')}\n\nКаждое утро бот выбирает одно видео случайно.`
+      : '🎵 Музыка для утреннего запуска\n\nСписок пока пуст. Добавь ссылки на видео, и бот будет выбирать одно из них при подъёме.',
+    { reply_markup: keyboard },
+  );
+};
+
 const saveFireTvInput = async (
   ctx: BotContext,
   state: MenuState,
   raw: string,
 ) => {
   const { taskData, metadata } = await queryTasks();
-  if (state.input === 'tv-host') {
+  const editingHost = state.input === 'tv-host';
+  if (editingHost) {
     metadata.fire_tv_host = normalizeFireTvHost(raw);
   } else {
     const urls =
@@ -445,8 +466,10 @@ const saveFireTvInput = async (
     metadata.fire_tv_media = urls.join('\n');
   }
   state.input = undefined;
-  await saveTasks(taskData, metadata);
-  await showFireTvSettings(ctx);
+  if (!(await saveTasks(taskData, metadata)))
+    throw new Error('TV settings were not saved');
+  if (editingHost) await showFireTvSettings(ctx);
+  else await showFireTvMedia(ctx);
 };
 
 const testFireTv = async (ctx: BotContext) => {
@@ -462,7 +485,7 @@ const testFireTv = async (ctx: BotContext) => {
       ctx,
       selected
         ? `📺 Телевизор включён. Команда запуска видео отправлена: ${selected}\n\nПроверь, появилось ли видео на экране.`
-        : '📺 Телевизор включён. Список видео пуст — добавь ссылку через «🎵 Список видео», затем повтори проверку.',
+        : '📺 Телевизор включён. Список видео пуст — добавь ссылку через «🎵 Текущая музыка», затем повтори проверку.',
     );
   } catch (error) {
     const detail =
@@ -644,6 +667,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (action === 'wake') return await showWakeSettings(ctx);
       if (action === 'morning') return await showMorningSettings(ctx);
       if (action === 'tv') return await showFireTvSettings(ctx);
+      if (action === 'tvlist') return await showFireTvMedia(ctx);
       if (action === 'wakeinput') {
         if (
           !['weekday', 'friday', 'sober', 'drinking'].includes(value || '') ||
@@ -714,8 +738,12 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           ctx,
           action === 'tvhost'
             ? 'Отправь локальный IPv4 телевизора, например 192.168.1.50.'
-            : 'Отправь YouTube-ссылки: каждая с новой строки, максимум 20. Чтобы очистить список, отправь «очистить».',
-          { reply_markup: navigationKeyboard('menu:tv') },
+            : 'Отправь новый список YouTube-ссылок: каждая с новой строки, максимум 20. Он заменит текущий. Чтобы очистить список, отправь «очистить».',
+          {
+            reply_markup: navigationKeyboard(
+              action === 'tvhost' ? 'menu:tv' : 'menu:tvlist',
+            ),
+          },
         );
       }
       if (action === 'tvtest') return await testFireTv(ctx);
