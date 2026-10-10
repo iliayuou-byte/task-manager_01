@@ -6,6 +6,11 @@ import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
 import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { QUADRANTS, setQuadrant } from '../services/eisenhower.js';
+import {
+  normalizeFireTvHost,
+  parseFireTvMedia,
+  wakeFireTv,
+} from '../services/fireTv.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
 import { saveTasks } from '../services/saveTasks.js';
@@ -44,7 +49,9 @@ interface MenuState {
     | 'wake-weekday'
     | 'wake-friday'
     | 'wake-sober'
-    | 'wake-drinking';
+    | 'wake-drinking'
+    | 'tv-host'
+    | 'tv-media';
   tasks?: Task[];
   today?: boolean;
   selected?: Task;
@@ -229,9 +236,9 @@ const showWakeSettings = async (ctx: BotContext) => {
   const weekendStatus =
     wake_weekend_mode_week === weekendFriday
       ? wake_weekend_mode === 'sober'
-        ? 'На ближайшие выходные выбран подъём в 09:00.'
-        : 'На ближайшие выходные выбран подъём в 10:00.'
-      : 'В пятницу в 21:00 спрошу про планы и выберу время на выходные.';
+        ? `На ближайшие выходные выбран подъём в ${soberTime}.`
+        : `На ближайшие выходные выбран подъём в ${drinkingTime}.`
+      : `В пятницу в ${fridayTime} спрошу про планы и выберу время на выходные.`;
   const keyboard = new InlineKeyboard()
     .text('⏪ На 15 мин раньше', `menu:wakeearlier:${state.id}`)
     .row()
@@ -323,6 +330,72 @@ const adjustWakeTime = async (
   metadata.wake_weekday_time = time;
   await saveTasks(taskData, metadata);
   await showWakeSettings(ctx);
+};
+
+const showFireTvSettings = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const host = metadata.fire_tv_host || '';
+  const media = metadata.fire_tv_media
+    ? parseFireTvMedia(metadata.fire_tv_media)
+    : [];
+  const enabled = metadata.fire_tv_enabled === 'true';
+  const state = newState(ctx);
+  const keyboard = new InlineKeyboard()
+    .text('🌐 Указать IP', `menu:tvhost:${state.id}`)
+    .row()
+    .text('🎵 Список видео', `menu:tvmedia:${state.id}`)
+    .row()
+    .text('🔌 Проверить / разбудить', `menu:tvtest:${state.id}`)
+    .row()
+    .text(
+      enabled ? '⏸ Выключить запуск по расписанию' : '▶️ Включить по расписанию',
+      `menu:tvtoggle:${state.id}`,
+    )
+    .row()
+    .text('⬅️ Настройки', 'menu:settings')
+    .text('🏠 Меню', 'menu:home');
+  await panelReply(
+    ctx,
+    `📺 Утренний телевизор\n\nIP: ${host || 'не задан'}\nЗапуск по расписанию: ${enabled ? 'включён' : 'выключен'}\nYouTube-ссылок: ${media.length}\n\nВ час подъёма бот разбудит телевизор и откроет случайное видео из списка. Оставь IP телевизора закреплённым в домашней сети.`,
+    { reply_markup: keyboard },
+  );
+};
+
+const saveFireTvInput = async (
+  ctx: BotContext,
+  state: MenuState,
+  raw: string,
+) => {
+  const { taskData, metadata } = await queryTasks();
+  if (state.input === 'tv-host') {
+    metadata.fire_tv_host = normalizeFireTvHost(raw);
+  } else {
+    const urls =
+      raw.trim().toLowerCase() === 'очистить' ? [] : parseFireTvMedia(raw);
+    metadata.fire_tv_media = urls.join('\n');
+  }
+  state.input = undefined;
+  await saveTasks(taskData, metadata);
+  await showFireTvSettings(ctx);
+};
+
+const testFireTv = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  if (!metadata.fire_tv_host)
+    return await panelReply(ctx, 'Сначала укажи локальный IP телевизора.');
+  try {
+    await wakeFireTv(metadata.fire_tv_host);
+    await panelReply(
+      ctx,
+      '✅ ADB подключился, телевизору отправлена команда пробуждения.',
+    );
+  } catch (error) {
+    const detail =
+      error instanceof Error && error.message.includes('ENOENT')
+        ? 'Не найден adb. Установи Android Platform Tools на сервер и добавь adb в PATH.'
+        : 'Не удалось подключиться. Проверь IP, ADB Debugging и подтверждение доступа на экране телевизора.';
+    await panelReply(ctx, `❌ ${detail}`);
+  }
 };
 
 const writeTimes = async (
@@ -428,6 +501,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       }
       if (state.input?.startsWith('wake-'))
         return await saveWakeInput(ctx, state, text);
+      if (state.input?.startsWith('tv-'))
+        return await saveFireTvInput(ctx, state, text);
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text))
         return await panelReply(
           ctx,
@@ -488,6 +563,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       }
       if (action === 'reminders') return await showReminders(ctx);
       if (action === 'wake') return await showWakeSettings(ctx);
+      if (action === 'tv') return await showFireTvSettings(ctx);
       if (action === 'wakeinput') {
         if (
           !['weekday', 'friday', 'sober', 'drinking'].includes(value || '') ||
@@ -500,6 +576,31 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           `Введи время в формате HH:MM.${value === 'weekday' ? ' Для будней — от 07:00 до 08:00.' : ''}`,
           { reply_markup: navigationKeyboard('menu:wake') },
         );
+      }
+      if (action === 'tvhost' || action === 'tvmedia') {
+        if (!state) return;
+        state.input = action === 'tvhost' ? 'tv-host' : 'tv-media';
+        return await panelReply(
+          ctx,
+          action === 'tvhost'
+            ? 'Отправь локальный IPv4 телевизора, например 192.168.1.50.'
+            : 'Отправь YouTube-ссылки: каждая с новой строки, максимум 20. Чтобы очистить список, отправь «очистить».',
+          { reply_markup: navigationKeyboard('menu:tv') },
+        );
+      }
+      if (action === 'tvtest') return await testFireTv(ctx);
+      if (action === 'tvtoggle') {
+        if (!state) return;
+        const { taskData, metadata } = await queryTasks();
+        if (!metadata.fire_tv_host)
+          return await panelReply(
+            ctx,
+            'Сначала укажи локальный IP телевизора.',
+          );
+        metadata.fire_tv_enabled =
+          metadata.fire_tv_enabled === 'true' ? 'false' : 'true';
+        await saveTasks(taskData, metadata);
+        return await showFireTvSettings(ctx);
       }
       if (action === 'timezone') {
         newState(ctx);
