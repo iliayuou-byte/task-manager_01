@@ -3,6 +3,7 @@ import { type Bot, InlineKeyboard } from 'grammy';
 import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
+import { parseFireTvMedia, wakeFireTv } from './fireTv.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
 import { rememberTaskNumbers } from './taskNumbers.js';
@@ -159,12 +160,30 @@ const checkUserWakeSchedule = async (
         : drinkingWakeTime;
 
   if (metadata.wake_last_sent !== date && isDue(clock, wakeTime)) {
+    let tvResult = '';
+    if (metadata.fire_tv_enabled === 'true' && metadata.fire_tv_host) {
+      try {
+        const links = metadata.fire_tv_media
+          ? parseFireTvMedia(metadata.fire_tv_media)
+          : [];
+        await wakeFireTv(metadata.fire_tv_host, links);
+        tvResult = '\n📺 Телевизору отправлена команда пробуждения.';
+      } catch (error) {
+        logger.warnWithContext({
+          userId,
+          op: 'FIRE_TV_WAKE',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        tvResult =
+          '\n⚠️ Не получилось разбудить телевизор. Проверь ADB и его сеть.';
+      }
+    }
     const message =
       weekday <= 5
-        ? `⏰ Подъём — ${wakeTime}. Доброе утро! Начинаем день спокойно, без рывка.`
+        ? `⏰ Подъём — ${wakeTime}. Доброе утро! Начинаем день спокойно, без рывка.${tvResult}`
         : weekendMode === 'sober'
-          ? `⏰ Подъём — ${wakeTime}. Ты выбрал выходные без алкоголя — встаём и запускаем день.`
-          : `⏰ Подъём — ${wakeTime}. Если вчера отдых затянулся, вставай спокойно: вода, душ, без самобичевания.`;
+          ? `⏰ Подъём — ${wakeTime}. Ты выбрал выходные без алкоголя — встаём и запускаем день.${tvResult}`
+          : `⏰ Подъём — ${wakeTime}. Если вчера отдых затянулся, вставай спокойно: вода, душ, без самобичевания.${tvResult}`;
     await bot.api.sendMessage(userId, message);
     const latest = await queryTasks();
     latest.metadata.wake_last_sent = date;
