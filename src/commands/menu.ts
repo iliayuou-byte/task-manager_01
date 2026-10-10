@@ -413,7 +413,7 @@ const showFireTvSettings = async (ctx: BotContext) => {
   const keyboard = new InlineKeyboard()
     .text('🌐 Указать IP', `menu:tvhost:${state.id}`)
     .row()
-    .text('🎵 Текущая музыка', `menu:tvlist:${state.id}`)
+    .text('✏️ Изменить музыку', `menu:tvmedia:${state.id}`)
     .row()
     .text('▶️ Проверить видео на ТВ', `menu:tvtest:${state.id}`)
     .row()
@@ -426,27 +426,7 @@ const showFireTvSettings = async (ctx: BotContext) => {
     .text('🏠 Меню', 'menu:home');
   await panelReply(
     ctx,
-    `📺 Утренний телевизор\n\nIP: ${host || 'не задан'}\nЗапуск по расписанию: ${enabled ? 'включён' : 'выключен'}\nYouTube-ссылок: ${media.length}\n\nВ час подъёма бот разбудит телевизор и откроет случайное видео из списка. Оставь IP телевизора закреплённым в домашней сети.`,
-    { reply_markup: keyboard },
-  );
-};
-
-const showFireTvMedia = async (ctx: BotContext) => {
-  const { metadata } = await queryTasks();
-  const media = metadata.fire_tv_media
-    ? parseFireTvMedia(metadata.fire_tv_media)
-    : [];
-  const state = newState(ctx);
-  const keyboard = new InlineKeyboard()
-    .text('✏️ Изменить список', `menu:tvmedia:${state.id}`)
-    .row()
-    .text('⬅️ Телевизор', 'menu:tv')
-    .text('🏠 Меню', 'menu:home');
-  await panelReply(
-    ctx,
-    media.length
-      ? `🎵 Музыка для утреннего запуска · ${media.length}\n\n${media.map((url, index) => `${index + 1}. ${url}`).join('\n')}\n\nКаждое утро бот выбирает одно видео случайно.`
-      : '🎵 Музыка для утреннего запуска\n\nСписок пока пуст. Добавь ссылки на видео, и бот будет выбирать одно из них при подъёме.',
+    `📺 Утренний телевизор\n\nIP: ${host || 'не задан'}\nЗапуск по расписанию: ${enabled ? 'включён' : 'выключен'}\n\n🎵 Музыка (${media.length}):\n${media.length ? media.map((url, index) => `${index + 1}. ${url}`).join('\n') : 'Список пуст'}\n\nВ час подъёма бот разбудит телевизор и откроет случайное видео из списка. Оставь IP телевизора закреплённым в домашней сети.`,
     { reply_markup: keyboard },
   );
 };
@@ -457,8 +437,7 @@ const saveFireTvInput = async (
   raw: string,
 ) => {
   const { taskData, metadata } = await queryTasks();
-  const editingHost = state.input === 'tv-host';
-  if (editingHost) {
+  if (state.input === 'tv-host') {
     metadata.fire_tv_host = normalizeFireTvHost(raw);
   } else {
     const urls =
@@ -468,8 +447,7 @@ const saveFireTvInput = async (
   state.input = undefined;
   if (!(await saveTasks(taskData, metadata)))
     throw new Error('TV settings were not saved');
-  if (editingHost) await showFireTvSettings(ctx);
-  else await showFireTvMedia(ctx);
+  await showFireTvSettings(ctx);
 };
 
 const testFireTv = async (ctx: BotContext) => {
@@ -485,7 +463,7 @@ const testFireTv = async (ctx: BotContext) => {
       ctx,
       selected
         ? `📺 Телевизор включён. Команда запуска видео отправлена: ${selected}\n\nПроверь, появилось ли видео на экране.`
-        : '📺 Телевизор включён. Список видео пуст — добавь ссылку через «🎵 Текущая музыка», затем повтори проверку.',
+        : '📺 Телевизор включён. Список видео пуст — добавь ссылку через «✏️ Изменить музыку», затем повтори проверку.',
     );
   } catch (error) {
     const detail =
@@ -667,7 +645,6 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (action === 'wake') return await showWakeSettings(ctx);
       if (action === 'morning') return await showMorningSettings(ctx);
       if (action === 'tv') return await showFireTvSettings(ctx);
-      if (action === 'tvlist') return await showFireTvMedia(ctx);
       if (action === 'wakeinput') {
         if (
           !['weekday', 'friday', 'sober', 'drinking'].includes(value || '') ||
@@ -739,11 +716,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           action === 'tvhost'
             ? 'Отправь локальный IPv4 телевизора, например 192.168.1.50.'
             : 'Отправь новый список YouTube-ссылок: каждая с новой строки, максимум 20. Он заменит текущий. Чтобы очистить список, отправь «очистить».',
-          {
-            reply_markup: navigationKeyboard(
-              action === 'tvhost' ? 'menu:tv' : 'menu:tvlist',
-            ),
-          },
+          { reply_markup: navigationKeyboard('menu:tv') },
         );
       }
       if (action === 'tvtest') return await testFireTv(ctx);
