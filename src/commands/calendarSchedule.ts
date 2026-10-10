@@ -223,15 +223,16 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
   });
   composer.on('message:document', async (ctx, next) => {
     if (ctx.chat.type !== 'private') return next();
-    const state = states.get(chatKey(ctx));
-    if (!state || state.expires < Date.now() || state.step !== 'upload')
-      return next();
-    if (state.busy) return;
     const document = ctx.message.document;
-    if (
-      !/\.ics$/i.test(document.file_name || '') ||
-      (document.file_size || 0) > MAX_ICS_BYTES
-    )
+    const isIcs = /\.ics$/i.test(document.file_name || '');
+    let state = states.get(chatKey(ctx));
+    if (!isIcs && (!state || state.step !== 'upload')) return next();
+    if (!state || state.expires < Date.now() || state.step !== 'upload') {
+      state = createState(ctx);
+      state.step = 'upload';
+    }
+    if (state.busy) return;
+    if (!isIcs || (document.file_size || 0) > MAX_ICS_BYTES)
       return panelReply(ctx, 'Нужен файл .ics размером до 256 КБ.', {
         reply_markup: keyboard(state),
       });
