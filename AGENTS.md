@@ -227,6 +227,14 @@ Treat feed content as untrusted; do not expose Telegram download URLs/errors. Th
 Link export is a snapshot unless it contains a subscription URL; refresh requires
 re-importing an updated file.
 
+`clients/google-calendar.ts` syncs the owner's imported schedule to the
+configured Google calendar. File uploads save and sync immediately; pasted ICS
+text retains confirmation. Sync uses deterministic Google event IDs and a
+private extended-property marker, so retries do not duplicate events and only
+previous bot-imported events are removed on replacement. A failed sync keeps
+the bot's schedule and offers a retry button. Apple Calendar displays the same
+Google account; this is not a separate iCloud write. See `docs/CALENDAR_SYNC.md`.
+
 ### Weekday morning checklist
 
 `services/morningChecklist.ts` validates the editable morning items and renders the
