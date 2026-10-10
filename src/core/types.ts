@@ -51,6 +51,14 @@ export interface Metadata {
   reminder_times?: string;
   reminder_saved_times?: string;
   reminder_last_sent?: string;
+  wake_weekday_time?: string;
+  wake_friday_prompt_time?: string;
+  wake_weekend_sober_time?: string;
+  wake_weekend_drinking_time?: string;
+  wake_last_sent?: string;
+  wake_friday_prompt_sent?: string;
+  wake_weekend_mode?: string;
+  wake_weekend_mode_week?: string;
   calendar_events?: string;
   calendar_source_name?: string;
   calendar_imported_at?: string;
