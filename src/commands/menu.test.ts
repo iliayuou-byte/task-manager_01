@@ -221,21 +221,20 @@ test('morning list settings edit the next weekday checklist and can be disabled'
   expect(f.data().metadata.morning_enabled).toBe('false');
 });
 
-test('TV music screen shows the saved links and refreshes after replacement', async () => {
+test('TV settings show the current links and refresh after replacement', async () => {
   const f = fixture(592);
   const latestText = () =>
     String([...f.calls].reverse().find((call) => call.text)?.text);
   await f.click('menu:tv');
-  await f.click(f.button('Текущая музыка'));
-  expect(latestText()).toContain('Список пока пуст');
-  await f.click(f.button('Изменить список'));
+  expect(latestText()).toContain('🎵 Музыка (0):\nСписок пуст');
+  await f.click(f.button('Изменить музыку'));
   await f.text('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=35');
   expect(f.data().metadata.fire_tv_media).toBe('https://youtu.be/dQw4w9WgXcQ');
   expect(latestText()).toContain('1. https://youtu.be/dQw4w9WgXcQ');
-  await f.click(f.button('Изменить список'));
+  await f.click(f.button('Изменить музыку'));
   await f.text('очистить');
   expect(f.data().metadata.fire_tv_media).toBe('');
-  expect(latestText()).toContain('Список пока пуст');
+  expect(latestText()).toContain('🎵 Музыка (0):\nСписок пуст');
 });
 
 test('morning checklist button updates progress and rejects an expired list', async () => {
