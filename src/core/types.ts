@@ -59,6 +59,9 @@ export interface Metadata {
   wake_friday_prompt_sent?: string;
   wake_weekend_mode?: string;
   wake_weekend_mode_week?: string;
+  fire_tv_host?: string;
+  fire_tv_enabled?: string;
+  fire_tv_media?: string;
   calendar_events?: string;
   calendar_source_name?: string;
   calendar_imported_at?: string;
