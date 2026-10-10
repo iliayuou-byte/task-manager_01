@@ -2,7 +2,7 @@ import { InlineKeyboard, Keyboard } from 'grammy';
 
 export const MENU = {
   today: '📋 Сегодня',
-  plan: '🗓 План дня',
+  plan: '📅 Календарь',
   all: '📚 Все дела',
   add: '➕ Добавить',
   now: '🎯 Что сейчас',

@@ -78,17 +78,24 @@ export const parseMarkdown = (content: string): ParseResult => {
           key === 'reminder_times' ||
           key === 'reminder_last_sent' ||
           key === 'reminder_saved_times' ||
-          key === 'planner_notify_times' ||
-          key === 'planner_last_sent'
+          key === 'calendar_imported_at' ||
+          key === 'calendar_timezone'
         ) {
           metadata[key] = value;
-        } else if (key === 'planner_preferences') {
+        } else if (key === 'calendar_events') {
           try {
-            const preferences: unknown = JSON.parse(value);
-            if (typeof preferences === 'string')
-              metadata.planner_preferences = preferences;
+            const events: unknown = JSON.parse(value);
+            if (typeof events === 'string') metadata.calendar_events = events;
           } catch {
-            /* Invalid configuration is not imported. */
+            /* Invalid calendar data is ignored. */
+          }
+        } else if (key === 'calendar_source_name') {
+          try {
+            const source: unknown = JSON.parse(value);
+            if (typeof source === 'string')
+              metadata.calendar_source_name = source;
+          } catch {
+            metadata.calendar_source_name = value;
           }
         } else if (key === 'ai_auto_priority') {
           metadata.ai_auto_priority = value;
@@ -276,14 +283,16 @@ export const serializeTaskMarkdown = (
   const lines: string[] = [];
 
   lines.push('---');
-  if (metadata.planner_preferences)
+  if (metadata.calendar_events)
+    lines.push(`calendar_events: ${JSON.stringify(metadata.calendar_events)}`);
+  if (metadata.calendar_source_name)
     lines.push(
-      `planner_preferences: ${JSON.stringify(metadata.planner_preferences)}`,
+      `calendar_source_name: ${JSON.stringify(metadata.calendar_source_name)}`,
     );
-  if (metadata.planner_notify_times)
-    lines.push(`planner_notify_times: ${metadata.planner_notify_times}`);
-  if (metadata.planner_last_sent)
-    lines.push(`planner_last_sent: ${metadata.planner_last_sent}`);
+  if (metadata.calendar_imported_at)
+    lines.push(`calendar_imported_at: ${metadata.calendar_imported_at}`);
+  if (metadata.calendar_timezone)
+    lines.push(`calendar_timezone: ${metadata.calendar_timezone}`);
   if (metadata.ai_auto_priority)
     lines.push(`ai_auto_priority: ${metadata.ai_auto_priority}`);
   if (metadata.ai_priority_rules)

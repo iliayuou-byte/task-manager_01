@@ -217,38 +217,12 @@ and pagination also render the full live list. `showCompletePicker` includes a
 chunked matrix while retaining completion controls; keep calendar prompts as
 `panelNotice` so they do not replace the refreshed list keyboard.
 
-### Day planner
+### Calendar schedule import
 
-`commands/day.ts` manages user/chat-bound expiring draft screens and explicit timed
-creation/completion/deferral. Register before menu and edit/add input handlers.
-`services/dayPlanner.ts` computes nonpersistent proposals around recurring weekly
-busy slots and explicit task times; reports conflicts/overflow and derives completion
-counts from existing logs. Never treat proposed intervals as deadlines or silently
-write them to a calendar. GitHub frontmatter persists JSON-encoded
-`planner_preferences`, `planner_notify_times`, and `planner_last_sent` per profile.
-Planner digests run inside the existing scoped reminder loop even when ordinary
-reminders are off. Calendar/mail imports are future integrations; pasted mail text
-must still go through brain confirmation.
-
-`services/routineTemplates.ts` validates bounded routine blocks, including cyclic
-night intervals, and provides starter drafts. Planner preferences optionally store
-`templates` and `weekTemplates` (ISO weekdays to saved template IDs). Old settings
-without these fields remain valid. Routine blocks occupy planning time but never
-create tasks/calendar entries. Template editing and weekday toggles remain drafts
-until a confirmed save with the original preference fingerprint; Home invalidates
-old callbacks. Deleting a saved template removes its weekday assignments.
-
-`services/routineTable.ts` owns CSV/TSV interchange for one selected routine
-(template identity/week assignments stay in the wizard). Import is bounded to
-64 KiB including streamed downloads, validates UTF-8 and all routine intervals,
-and remains a draft until templateSave. File handling requires an active private,
-owner/chat-bound import screen; recheck screen identity/expiry after download.
-Never log or expose file-fetch errors containing Telegram token URLs. CSV exports
-are explicit durable documents, not UI panels; formula-like names export as text.
-
-Routine CSV export now includes every starter and saved template plus ISO weekday
-assignments in columns Template, Days, Start, End, Activity. CSV import groups
-rows by exact template name, validates consistent weekday values, rejects duplicate
-day ownership and replaces the full template set only after explicit confirmation.
-A legacy single-template CSV remains accepted. On import confirmation preserve
-all unrelated planner preferences and the task data.
+`commands/calendarSchedule.ts` serves the calendar-first “Plan for today” screen. Private users
+can import a bounded `.ics` file; preview dates, timezone and event summaries before
+confirming replacement. `services/icsCalendar.ts` unfolds RFC 5545 lines, reads
+expanded events and stores normalized events in the user's GitHub frontmatter.
+Treat feed content as untrusted; do not expose Telegram download URLs/errors. The HM
+Link export is a snapshot unless it contains a subscription URL; refresh requires
+re-importing an updated file.

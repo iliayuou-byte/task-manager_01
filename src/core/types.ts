@@ -51,9 +51,10 @@ export interface Metadata {
   reminder_times?: string;
   reminder_saved_times?: string;
   reminder_last_sent?: string;
-  planner_preferences?: string;
-  planner_notify_times?: string;
-  planner_last_sent?: string;
+  calendar_events?: string;
+  calendar_source_name?: string;
+  calendar_imported_at?: string;
+  calendar_timezone?: string;
 }
 
 // GitHub Webhook Types

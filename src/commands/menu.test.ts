@@ -1,4 +1,4 @@
-import { afterEach, expect, setSystemTime, spyOn, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,14 +18,13 @@ import {
   registerPendingInputs,
   retryPendingInputsOnce,
 } from '../services/pendingInputs.js';
-import { checkReminders } from '../services/reminders.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
 import { registerAssistant } from './assistant.js';
 import { registerBrainActions } from './brain.js';
+import { registerCalendarSchedule } from './calendarSchedule.js';
 import { completeCommand } from './complete.js';
-import { registerDayPlanner } from './day.js';
 import { registerMenu } from './menu.js';
 import { registerSelectedRemoval } from './removeSelected.js';
 
@@ -98,7 +97,7 @@ const fixture = (user: number) => {
   });
   registerContextKeyboard(bot);
   registerAiSettings(bot);
-  registerDayPlanner(bot);
+  registerCalendarSchedule(bot);
   registerMenu(bot);
   registerPendingInputs(bot);
   registerBrainActions(bot);
@@ -131,23 +130,6 @@ const fixture = (user: number) => {
               },
             ]
           : undefined,
-      },
-    });
-  };
-  const document = async (name = 'routine.csv') => {
-    await bot.handleUpdate({
-      update_id: update++,
-      message: {
-        message_id: message.message_id,
-        date: message.date,
-        chat: message.chat,
-        from,
-        document: {
-          file_id: 'table',
-          file_unique_id: 'table',
-          file_name: name,
-          file_size: 100,
-        },
       },
     });
   };
@@ -200,7 +182,6 @@ const fixture = (user: number) => {
   return {
     bot,
     text,
-    document,
     click,
     button,
     labels,
@@ -989,266 +970,17 @@ test('editing a date out of Today shows an empty list without stale task buttons
   expect(f.labels().some((label) => label.includes('Первое'))).toBe(false);
 });
 
-test('day planner creates timed tasks only after confirmation and home invalidates an old save', async () => {
-  const f = fixture(600);
-  await f.text(MENU.plan);
-  await f.tap('Дело со временем');
-  await f.text('Работа над Kür');
-  await f.tap('Завтра');
-  await f.text('18:00-19:30');
-  const oldSave = f.button('Сохранить');
-  expect(f.data().taskData.uncompleted).toHaveLength(2);
-  await f.tap('🏠 Меню');
-  await f.click(oldSave);
-  expect(f.data().taskData.uncompleted).toHaveLength(2);
-  await f.text(MENU.plan);
-  await f.tap('Дело со временем');
-  await f.text('Работа над Kür');
-  await f.tap('Завтра');
-  await f.text('18:00-19:30');
-  await f.tap('Сохранить');
-  expect(
-    f
-      .data()
-      .taskData.uncompleted.find((task) => task.name === 'Работа над Kür'),
-  ).toMatchObject({ time: '18:00', duration: '01:30' });
-});
-test('planner weekly schedule and notification settings persist without mutating task contents', async () => {
+test('calendar menu previews an ICS schedule and only replaces it after confirmation', async () => {
   const f = fixture(601);
+  const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nX-WR-TIMEZONE:Europe/Berlin\nBEGIN:VEVENT\nUID:lecture-1\nDTSTART;TZID=Europe/Berlin:20261012T090000\nDTEND;TZID=Europe/Berlin:20261012T101500\nSUMMARY:Accounting\nEND:VEVENT\nEND:VCALENDAR`;
   await f.text(MENU.plan);
-  await f.tap('Расписание');
-  await f.tap('Занятые часы');
-  await f.text('Лекции');
-  await f.tap('Пн–Пт');
-  await f.text('09:00-12:00');
-  await f.tap('Сохранить');
-  expect(
-    JSON.parse(f.data().metadata.planner_preferences!).busy[0],
-  ).toMatchObject({
-    name: 'Лекции',
-    days: [1, 2, 3, 4, 5],
-    start: '09:00',
-    end: '12:00',
-  });
-  await f.text(MENU.plan);
-  await f.tap('Планировка');
-  await f.tap('Утро и вечер');
-  await f.text('08:00 21:00');
-  expect(f.data().metadata.planner_notify_times).toBe('08:00,21:00');
-  expect(f.data().taskData.uncompleted).toHaveLength(2);
-  await f.tap('Утро и вечер');
-  await f.tap('Выключить');
-  expect(f.data().metadata.planner_notify_times).toBe('off');
-});
-
-test('planner sends a morning plan and evening summary once per slot even with ordinary reminders off', async () => {
-  const previous = process.env.TELEGRAM_BOT_ALLOWLIST;
-  process.env.TELEGRAM_BOT_ALLOWLIST = '602';
-  try {
-    const f = fixture(602);
-    f.data().metadata.planner_notify_times = '08:00,21:00';
-    f.data().metadata.reminder_times = 'off';
-    await checkReminders(f.bot, new Date('2026-10-09T06:00:00Z'));
-    await checkReminders(f.bot, new Date('2026-10-09T06:01:00Z'));
-    expect(
-      f.calls.filter((call) => String(call.text).includes('Доброе утро')),
-    ).toHaveLength(1);
-    await checkReminders(f.bot, new Date('2026-10-09T19:00:00Z'));
-    expect(
-      f.calls.filter((call) => String(call.text).includes('Вечерний обзор')),
-    ).toHaveLength(1);
-    expect(f.data().metadata.planner_last_sent).toBe('2026-10-09T21:00');
-  } finally {
-    if (previous === undefined) delete process.env.TELEGRAM_BOT_ALLOWLIST;
-    else process.env.TELEGRAM_BOT_ALLOWLIST = previous;
-  }
-});
-
-test('next-step completion updates the daily tracker; explicit deferral and stale cards cannot complete the wrong task', async () => {
-  setSystemTime(new Date('2026-10-09T10:00:00Z'));
-  try {
-    const f = fixture(603);
-    await f.text(MENU.plan);
-    await f.tap('Следующий шаг');
-    const stale = f.button('Готово');
-    await f.tap('Готово');
-    expect(f.data().taskData.completed[0].name).toBe('Первое');
-    expect(f.data().taskData.completed[0].log).toContain(
-      'Completed 2026-10-09',
-    );
-    await f.tap('Следующий шаг');
-    await f.tap('На завтра');
-    expect(f.data().taskData.uncompleted[0].date).toBe('2026-10-10');
-    await f.click(stale);
-    expect(f.data().taskData.completed).toHaveLength(1);
-    await f.text(MENU.plan);
-    await f.tap('Итог дня');
-    expect(
-      String([...f.calls].reverse().find((call) => call.text)?.text),
-    ).toContain('Завершено: 1');
-  } finally {
-    setSystemTime();
-  }
-});
-
-test('routine templates edit, assign, unassign and delete with confirmed persistence', async () => {
-  const f = fixture(610);
-  const before = structuredClone(f.data().taskData);
-  await f.text(MENU.plan);
-  await f.tap('Планировка');
-  await f.tap('Шаблоны');
-  await f.tap('Учебный');
-  expect(f.data().metadata.planner_preferences).toBeUndefined();
-  await f.tap('Название');
-  await f.text('Мой режим');
-  await f.tap('Изменить блоки');
-  await f.text('23:00-08:00 Сон\n08:00-08:30 Завтрак');
-  await f.tap('Дни недели');
-  await f.tap('Пн');
-  // Seventh weekday and confirmation live on the second compact keyboard page.
-  await f.tap('▶');
-  await f.tap('Сохранить назначение');
-  let preferences = JSON.parse(f.data().metadata.planner_preferences!);
-  expect(preferences.weekTemplates).toEqual({ '1': 'study' });
-  expect(preferences.templates[0].name).toBe('Мой режим');
-  expect(preferences.templates[0].blocks).toHaveLength(2);
-  await f.tap('Мой режим');
-  await f.tap('Дни недели');
-  await f.tap('Пн');
-  await f.tap('▶');
-  await f.tap('Сохранить назначение');
-  preferences = JSON.parse(f.data().metadata.planner_preferences!);
-  expect(preferences.weekTemplates).toEqual({});
-  await f.tap('Мой режим');
-  await f.tap('Удалить шаблон');
-  await f.tap('Подтвердить');
-  expect(JSON.parse(f.data().metadata.planner_preferences!).templates).toEqual(
-    [],
-  );
-  expect(f.data().taskData).toEqual(before);
-});
-
-test('template confirmation is invalidated by home and rejects concurrent preference changes', async () => {
-  const f = fixture(611);
-  const open = async () => {
-    await f.text(MENU.plan);
-    await f.tap('Планировка');
-    await f.tap('Шаблоны');
-    await f.tap('Рабочий');
-  };
-  await open();
-  const save = f.button('Сохранить шаблон');
-  await f.tap('Меню');
-  await f.click(save);
-  expect(f.data().metadata.planner_preferences).toBeUndefined();
-  await open();
-  const concurrent = JSON.stringify({ start: '10:00', end: '20:00', busy: [] });
-  f.data().metadata.planner_preferences = concurrent;
-  await f.tap('Сохранить шаблон');
-  expect(f.data().metadata.planner_preferences).toBe(concurrent);
-});
-
-test('external table editor exports CSV and previews pasted changes before saving', async () => {
-  const f = fixture(612);
-  await f.text(MENU.plan);
-  await f.tap('Планировка');
-  await f.tap('Шаблоны');
-  await f.tap('Выходной');
-  await f.tap('Редактор в таблице');
-  await f.tap('Скачать CSV');
-  expect(f.calls.some((call) => call.method === 'sendDocument')).toBe(true);
-  await f.tap('Загрузить таблицу');
-  await f.text(
-    'Шаблон\tДни\tНачало\tКонец\tЗанятие\nВыходной\tСб|Вс\t08:00\t08:30\tЕда\nВыходной\tСб|Вс\t23:00\t07:00\tСон',
-  );
-  expect(f.data().metadata.planner_preferences).toBeUndefined();
-  await f.tap('Сохранить все шаблоны');
-  const saved = JSON.parse(f.data().metadata.planner_preferences!);
-  expect(saved.templates[0].blocks[0].name).toBe('Еда');
-  expect(saved.templates[0].blocks).toHaveLength(2);
-});
-
-test('invalid table input keeps the draft editable and home cancels import confirmation', async () => {
-  const f = fixture(613);
-  await f.text(MENU.plan);
-  await f.tap('Планировка');
-  await f.tap('Шаблоны');
-  await f.tap('Выходной');
-  await f.tap('Редактор в таблице');
-  await f.tap('Загрузить таблицу');
-  await f.text(
-    'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб,08:00,09:00,Еда\nВыходной,Сб,08:30,10:00,Работа',
-  );
-  expect(
-    f.calls.some((call) => String(call.text).includes('пересекаются')),
-  ).toBe(true);
-  await f.text(
-    'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб,08:00,08:30,Завтрак',
-  );
-  const save = f.button('Сохранить все шаблоны');
-  await f.tap('Меню');
-  await f.click(save);
-  expect(f.data().metadata.planner_preferences).toBeUndefined();
-});
-
-test('CSV documents produce drafts and cancellation suppresses late downloaded results', async () => {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  process.env.TELEGRAM_BOT_TOKEN = '123:test';
-  try {
-    const f = fixture(614);
-    const openImport = async () => {
-      await f.text(MENU.plan);
-      await f.tap('Планировка');
-      await f.tap('Шаблоны');
-      await f.tap('Выходной');
-      await f.tap('Редактор в таблице');
-      await f.tap('Загрузить таблицу');
-    };
-    const download = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб|Вс,08:00,08:30,Завтрак',
-      ),
-    );
-    spies.push(download);
-    await openImport();
-    await f.document();
-    expect(f.data().metadata.planner_preferences).toBeUndefined();
-    await f.tap('Сохранить все шаблоны');
-    expect(
-      JSON.parse(f.data().metadata.planner_preferences!).templates[0].blocks[0]
-        .name,
-    ).toBe('Завтрак');
-    const saved = f.data().metadata.planner_preferences;
-    await openImport();
-    let release!: (response: Response) => void;
-    let began!: () => void;
-    const started = new Promise<void>((resolve) => {
-      began = resolve;
-    });
-    download.mockImplementation(
-      Object.assign(
-        async () => {
-          began();
-          return await new Promise<Response>((resolve) => {
-            release = resolve;
-          });
-        },
-        { preconnect: globalThis.fetch.preconnect },
-      ),
-    );
-    const pending = f.document();
-    await started;
-    await f.text(MENU.home);
-    release(
-      new Response(
-        'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб|Вс,08:00,08:30,Поздняя правка',
-      ),
-    );
-    await pending;
-    expect(f.data().metadata.planner_preferences).toBe(saved);
-    expect(f.labels()).toContain(MENU.all);
-  } finally {
-    if (token === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
-    else process.env.TELEGRAM_BOT_TOKEN = token;
-  }
+  await f.tap('Импортировать .ics');
+  await f.text(ics);
+  expect(f.data().metadata.calendar_events).toBeUndefined();
+  expect(f.button('Импортировать расписание')).toBeDefined();
+  await f.tap('Импортировать расписание');
+  expect(JSON.parse(f.data().metadata.calendar_events || '[]')).toMatchObject([
+    { date: '2026-10-12', start: '09:00', title: 'Accounting' },
+  ]);
+  expect(f.data().metadata.calendar_timezone).toBe('Europe/Berlin');
 });
