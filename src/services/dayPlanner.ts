@@ -1,6 +1,12 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Metadata, Task, TaskData } from '../core/types.js';
 import { getQuadrant } from './eisenhower.js';
+import {
+  parseRoutineBlocks,
+  type RoutineTemplate,
+  routineIntervals,
+  routineText,
+} from './routineTemplates.js';
 
 export interface BusySlot {
   id: string;
@@ -13,6 +19,8 @@ export interface PlannerPreferences {
   start: string;
   end: string;
   busy: BusySlot[];
+  templates?: RoutineTemplate[];
+  weekTemplates?: Record<string, string>;
 }
 export interface PlanItem {
   task: Task;
@@ -52,6 +60,49 @@ export const plannerPreferences = (metadata: Metadata): PlannerPreferences => {
       throw new Error('Некорректное расписание.');
     parseWindow(`${slot.start}-${slot.end}`);
   }
+  if (raw.templates !== undefined) {
+    if (!Array.isArray(raw.templates) || raw.templates.length > 12)
+      throw new Error('Некорректные шаблоны.');
+    const ids = new Set<string>();
+    for (const template of raw.templates) {
+      if (
+        !template ||
+        typeof template.id !== 'string' ||
+        !/^[a-zA-Z0-9-]{1,36}$/.test(template.id) ||
+        ids.has(template.id) ||
+        typeof template.name !== 'string' ||
+        !template.name.trim() ||
+        template.name.length > 80 ||
+        !Array.isArray(template.blocks)
+      )
+        throw new Error('Некорректный шаблон.');
+      if (
+        template.blocks.some(
+          (block) =>
+            !block ||
+            typeof block.name !== 'string' ||
+            !block.name.trim() ||
+            typeof block.start !== 'string' ||
+            typeof block.end !== 'string',
+        )
+      )
+        throw new Error('Некорректный блок режима.');
+      ids.add(template.id);
+      parseRoutineBlocks(routineText(template));
+    }
+  }
+  if (
+    raw.weekTemplates !== undefined &&
+    (!raw.weekTemplates ||
+      typeof raw.weekTemplates !== 'object' ||
+      Array.isArray(raw.weekTemplates) ||
+      Object.entries(raw.weekTemplates).some(
+        ([day, id]) =>
+          !/^[1-7]$/.test(day) ||
+          !raw.templates?.some((template) => template.id === id),
+      ))
+  )
+    throw new Error('Некорректное назначение шаблонов.');
   return raw;
 };
 const durationMinutes = (task: Task) => {
@@ -68,6 +119,9 @@ export const buildDayPlan = (
   const day = Number(formatInTimeZone(now, timezone, 'i'));
   const preferences = plannerPreferences(metadata);
   const busy = preferences.busy.filter((slot) => slot.days.includes(day));
+  const routine = preferences.templates?.find(
+    (template) => template.id === preferences.weekTemplates?.[String(day)],
+  );
   const candidates = data.uncompleted.filter(
     (task) => !task.completed && (!task.date || task.date <= date),
   );
@@ -81,6 +135,7 @@ export const buildDayPlan = (
       fixed: true,
     }));
   const occupied = [
+    ...(routine?.blocks.flatMap(routineIntervals) || []),
     ...busy.map((slot) => ({
       start: clockMinutes(slot.start),
       end: clockMinutes(slot.end),
@@ -122,6 +177,7 @@ export const buildDayPlan = (
   );
   return {
     date,
+    routine,
     busy,
     items,
     overflow,
@@ -134,8 +190,15 @@ export const buildDayPlan = (
 export const dayPlanText = (plan: ReturnType<typeof buildDayPlan>) =>
   [
     `🗓 План дня · ${plan.date}`,
+    ...(plan.routine ? [`Режим: ${plan.routine.name}`] : []),
     '',
     ...[
+      ...(plan.routine?.blocks.flatMap((block) =>
+        routineIntervals(block).map((interval) => ({
+          start: interval.start,
+          text: `🔁 ${minuteClock(interval.start)}–${minuteClock(interval.end)} · ${block.name}`,
+        })),
+      ) || []),
       ...plan.busy.map((slot) => ({
         start: clockMinutes(slot.start),
         text: `▪️ ${slot.start}–${slot.end} · ${slot.name}`,
@@ -147,7 +210,7 @@ export const dayPlanText = (plan: ReturnType<typeof buildDayPlan>) =>
     ]
       .sort((a, b) => a.start - b.start)
       .map((item) => item.text),
-    ...(!plan.busy.length && !plan.items.length
+    ...(!plan.routine && !plan.busy.length && !plan.items.length
       ? ['Свободный день. Можно добавить дело.']
       : []),
     '',

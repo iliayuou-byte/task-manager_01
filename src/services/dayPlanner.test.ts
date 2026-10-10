@@ -117,3 +117,48 @@ test('completed history and local date drive the daily summary and planner setti
   expect(() => parseWindow('18:00-09:00')).toThrow();
   expect(() => parseWindow('25:00-26:00')).toThrow();
 });
+
+test('routine assignments respect local weekdays, overnight sleep and storage round trips', () => {
+  const settings = {
+    timezone: 'Europe/Berlin',
+    planner_preferences: JSON.stringify({
+      start: '06:00',
+      end: '22:00',
+      busy: [],
+      templates: [
+        {
+          id: 'rest',
+          name: 'Режим',
+          blocks: [
+            { name: 'Сон', start: '23:00', end: '08:00' },
+            { name: 'Завтрак', start: '08:00', end: '09:00' },
+          ],
+        },
+      ],
+      weekTemplates: { '5': 'rest' },
+    }),
+  };
+  const data: TaskData = {
+    completed: [],
+    uncompleted: [{ name: 'Дело', completed: false, tags: [] }],
+  };
+  const parsed = parseMarkdown(serializeTaskMarkdown(data, settings));
+  const friday = buildDayPlan(
+    {
+      uncompleted: parsed.tasks.filter((task) => !task.completed),
+      completed: parsed.tasks.filter((task) => task.completed),
+    },
+    parsed.metadata,
+    new Date('2026-10-09T04:00:00Z'),
+  );
+  expect(friday.routine?.name).toBe('Режим');
+  expect(friday.items[0].start).toBe(540);
+  expect(friday.conflicts).toBe(false);
+  const saturday = buildDayPlan(
+    data,
+    settings,
+    new Date('2026-10-10T04:00:00Z'),
+  );
+  expect(saturday.routine).toBeUndefined();
+  expect(saturday.items[0].start).toBe(360);
+});

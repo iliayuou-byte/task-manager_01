@@ -229,3 +229,11 @@ write them to a calendar. GitHub frontmatter persists JSON-encoded
 Planner digests run inside the existing scoped reminder loop even when ordinary
 reminders are off. Calendar/mail imports are future integrations; pasted mail text
 must still go through brain confirmation.
+
+`services/routineTemplates.ts` validates bounded routine blocks, including cyclic
+night intervals, and provides starter drafts. Planner preferences optionally store
+`templates` and `weekTemplates` (ISO weekdays to saved template IDs). Old settings
+without these fields remain valid. Routine blocks occupy planning time but never
+create tasks/calendar entries. Template editing and weekday toggles remain drafts
+until a confirmed save with the original preference fingerprint; Home invalidates
+old callbacks. Deleting a saved template removes its weekday assignments.

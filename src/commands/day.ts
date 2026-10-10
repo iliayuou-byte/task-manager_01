@@ -16,6 +16,13 @@ import {
   plannerPreferences,
 } from '../services/dayPlanner.js';
 import { queryTasks } from '../services/queryTasks.js';
+import {
+  parseRoutineBlocks,
+  type RoutineTemplate,
+  routineText,
+  starterTemplates,
+  WEEKDAYS,
+} from '../services/routineTemplates.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { taskFingerprint } from '../services/taskNumbers.js';
 import { logAndReplyError, markTaskCompleted } from '../utils/index.js';
@@ -36,6 +43,8 @@ interface DayState {
   window?: { start: string; end: string };
   task?: Task;
   original?: string;
+  template?: RoutineTemplate;
+  assignments?: Record<string, string>;
 }
 const states = new Map<string, DayState>();
 const key = (ctx: BotContext) => `${ctx.from!.id}:${ctx.chat!.id}`;
@@ -95,6 +104,7 @@ export const openDay = async (ctx: BotContext) => {
       ['🕒 Расписание', 'schedule'],
       ['📊 Итог дня', 'summary'],
       ['⚙️ Планировка и источники', 'settings'],
+      ['🔁 Шаблоны режима', 'templates'],
     ],
   );
 };
@@ -155,6 +165,7 @@ const showSettings = async (ctx: BotContext) => {
     `⚙️ Планировка\n\nПланируемое время: ${preferences.start}–${preferences.end}.\nУтренний план / вечерний итог: ${metadata.planner_notify_times || 'выключены'}.\n\nИсточники: расписание и дела бота. Текст письма можно вставить для разбора. Автоматическое чтение Google Calendar и почты ещё не подключено.`,
     state,
     [
+      ['🔁 Шаблоны режима', 'templates'],
       ['🕒 Часы планирования', 'hours'],
       ['🔔 Утро и вечер', 'notify'],
       ['📨 Дело из письма', 'mail'],
@@ -174,6 +185,70 @@ const savePreferences = async (
   );
   if (!(await saveTasks(latest.taskData, latest.metadata)))
     throw new Error('Не удалось сохранить расписание.');
+};
+const availableTemplates = (preferences: PlannerPreferences) => [
+  ...(preferences.templates || []),
+  ...starterTemplates().filter(
+    (starter) =>
+      !preferences.templates?.some((saved) => saved.id === starter.id),
+  ),
+];
+const showTemplates = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const preferences = plannerPreferences(metadata);
+  const state = fresh(ctx);
+  state.original = metadata.planner_preferences;
+  return screen(
+    ctx,
+    '🔁 Шаблоны режима\n\nВыбери шаблон, измени блоки и назначь дни недели. Пока он не назначен, план дня не меняется.\n\n' +
+      WEEKDAYS.map((day, index) => {
+        const template = preferences.templates?.find(
+          (item) => item.id === preferences.weekTemplates?.[String(index + 1)],
+        );
+        return `${day}: ${template?.name || 'без шаблона'}`;
+      }).join('\n'),
+    state,
+    [
+      ...availableTemplates(preferences).map(
+        (template) =>
+          [template.name, `template~${template.id}`] as [string, string],
+      ),
+      ['➕ Свой шаблон', 'templateNew'],
+    ],
+  );
+};
+const showTemplate = async (ctx: BotContext, state: DayState) => {
+  state.step = undefined;
+  return screen(
+    ctx,
+    `🔁 ${state.template!.name}\n\n${routineText(state.template!)}\n\nБлоки занимают время в плане. Промежутки остаются для дел. Сон может переходить через полночь.`,
+    state,
+    [
+      ['✏️ Название', 'templateName'],
+      ['🕒 Изменить блоки', 'templateBlocks'],
+      ['📅 Дни недели', 'templateDays'],
+      ['✅ Сохранить шаблон', 'templateSave'],
+      ['🗑 Удалить шаблон', 'templateDelete'],
+    ],
+  );
+};
+const showTemplateDays = async (ctx: BotContext, state: DayState) => {
+  state.step = undefined;
+  return screen(
+    ctx,
+    `📅 ${state.template!.name}\nВыбери дни. Сохранение заменит предыдущий режим только в выбранные дни.`,
+    state,
+    [
+      ...WEEKDAYS.map(
+        (day, index) =>
+          [
+            `${state.assignments?.[String(index + 1)] === state.template!.id ? '✅ ' : ''}${day}`,
+            `templateDay~${index + 1}`,
+          ] as [string, string],
+      ),
+      ['✅ Сохранить назначение', 'templateSave'],
+    ],
+  );
 };
 const dateScreen = async (ctx: BotContext, state: DayState) => {
   state.step = 'date';
@@ -217,6 +292,25 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
     if (state.busy) return;
     state.busy = true;
     try {
+      if (state.step === 'templateName') {
+        if (!text || text.length > 80)
+          throw new Error('Название: от 1 до 80 символов.');
+        state.template!.name = text;
+        if (!state.template!.blocks.length) {
+          state.step = 'templateBlocks';
+          return await screen(
+            ctx,
+            'Введи блоки, каждый с новой строки:\n08:00-08:30 Завтрак\n23:00-07:00 Сон',
+            state,
+            [],
+          );
+        }
+        return await showTemplate(ctx, state);
+      }
+      if (state.step === 'templateBlocks') {
+        state.template!.blocks = parseRoutineBlocks(text);
+        return await showTemplate(ctx, state);
+      }
       if (state.step === 'mail') {
         states.delete(key(ctx));
         return await processBrainInput(ctx, text);
@@ -313,7 +407,82 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
       if (action === 'schedule') return await showSchedule(ctx);
       if (action === 'settings') return await showSettings(ctx);
       if (!state) return;
+      if (action === 'templates') return await showTemplates(ctx);
+      if (action === 'templateNew' || action.startsWith('template~')) {
+        const { metadata } = await queryTasks();
+        const preferences = plannerPreferences(metadata);
+        const draft = fresh(ctx);
+        draft.original = metadata.planner_preferences;
+        draft.assignments = { ...preferences.weekTemplates };
+        if (action === 'templateNew') {
+          draft.template = { id: randomUUID(), name: '', blocks: [] };
+          draft.step = 'templateName';
+          return await screen(ctx, 'Как назовём новый режим?', draft, []);
+        }
+        const template = availableTemplates(preferences).find(
+          (item) => item.id === action.slice(9),
+        );
+        if (!template)
+          throw new Error('Шаблон не найден. Открой список заново.');
+        draft.template = structuredClone(template);
+        return await showTemplate(ctx, draft);
+      }
+      if (action.startsWith('template') && state.template) {
+        if (action === 'templateName' || action === 'templateBlocks') {
+          state.step = action;
+          return await screen(
+            ctx,
+            action === 'templateName'
+              ? 'Введи новое название.'
+              : `Отправь весь список блоков с исправлениями. Старые блоки заменятся после сохранения.\n\n${routineText(state.template)}`,
+            state,
+            [],
+          );
+        }
+        if (action === 'templateDays')
+          return await showTemplateDays(ctx, state);
+        if (action.startsWith('templateDay~')) {
+          const day = action.slice(12);
+          if (!/^[1-7]$/.test(day) || !state.assignments) return;
+          if (state.assignments[day] === state.template.id)
+            delete state.assignments[day];
+          else state.assignments[day] = state.template.id;
+          return await showTemplateDays(ctx, state);
+        }
+        if (action === 'templateDelete')
+          return await screen(
+            ctx,
+            'Удалить шаблон и его назначения? Дела останутся.',
+            state,
+            [['🗑 Подтвердить удаление', 'templateRemove']],
+          );
+        if (action === 'templateSave' || action === 'templateRemove') {
+          const template = state.template;
+          if (action === 'templateSave')
+            parseRoutineBlocks(routineText(template));
+          await savePreferences(ctx, state, (preferences) => {
+            const templates = (preferences.templates || []).filter(
+              (item) => item.id !== template.id,
+            );
+            if (action === 'templateSave') templates.push(template);
+            if (templates.length > 12)
+              throw new Error('Можно сохранить до 12 шаблонов.');
+            const weekTemplates = {
+              ...(state.assignments || preferences.weekTemplates),
+            };
+            if (action === 'templateRemove')
+              for (const [day, id] of Object.entries(weekTemplates))
+                if (id === template.id) delete weekTemplates[day];
+            return { ...preferences, templates, weekTemplates };
+          });
+          return await showTemplates(ctx);
+        }
+      }
       if (action === 'back') {
+        if (state.template) {
+          if (state.step) return await showTemplate(ctx, state);
+          return await showTemplates(ctx);
+        }
         if (state.step === 'date') {
           state.step = 'name';
           return await screen(ctx, 'Как называется дело?', state, []);

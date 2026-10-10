@@ -1061,3 +1061,60 @@ test('next-step completion updates the daily tracker; explicit deferral and stal
     setSystemTime();
   }
 });
+
+test('routine templates edit, assign, unassign and delete with confirmed persistence', async () => {
+  const f = fixture(610);
+  const before = structuredClone(f.data().taskData);
+  await f.text(MENU.plan);
+  await f.tap('Планировка');
+  await f.tap('Шаблоны');
+  await f.tap('Учебный');
+  expect(f.data().metadata.planner_preferences).toBeUndefined();
+  await f.tap('Название');
+  await f.text('Мой режим');
+  await f.tap('Изменить блоки');
+  await f.text('23:00-08:00 Сон\n08:00-08:30 Завтрак');
+  await f.tap('Дни недели');
+  await f.tap('Пн');
+  // Seventh weekday and confirmation live on the second compact keyboard page.
+  await f.tap('▶');
+  await f.tap('Сохранить назначение');
+  let preferences = JSON.parse(f.data().metadata.planner_preferences!);
+  expect(preferences.weekTemplates).toEqual({ '1': 'study' });
+  expect(preferences.templates[0].name).toBe('Мой режим');
+  expect(preferences.templates[0].blocks).toHaveLength(2);
+  await f.tap('Мой режим');
+  await f.tap('Дни недели');
+  await f.tap('Пн');
+  await f.tap('▶');
+  await f.tap('Сохранить назначение');
+  preferences = JSON.parse(f.data().metadata.planner_preferences!);
+  expect(preferences.weekTemplates).toEqual({});
+  await f.tap('Мой режим');
+  await f.tap('Удалить шаблон');
+  await f.tap('Подтвердить');
+  expect(JSON.parse(f.data().metadata.planner_preferences!).templates).toEqual(
+    [],
+  );
+  expect(f.data().taskData).toEqual(before);
+});
+
+test('template confirmation is invalidated by home and rejects concurrent preference changes', async () => {
+  const f = fixture(611);
+  const open = async () => {
+    await f.text(MENU.plan);
+    await f.tap('Планировка');
+    await f.tap('Шаблоны');
+    await f.tap('Рабочий');
+  };
+  await open();
+  const save = f.button('Сохранить шаблон');
+  await f.tap('Меню');
+  await f.click(save);
+  expect(f.data().metadata.planner_preferences).toBeUndefined();
+  await open();
+  const concurrent = JSON.stringify({ start: '10:00', end: '20:00', busy: [] });
+  f.data().metadata.planner_preferences = concurrent;
+  await f.tap('Сохранить шаблон');
+  expect(f.data().metadata.planner_preferences).toBe(concurrent);
+});
