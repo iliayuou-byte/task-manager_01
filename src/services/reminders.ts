@@ -1,5 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz';
-import type { Bot } from 'grammy';
+import { type Bot, InlineKeyboard } from 'grammy';
 import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
@@ -85,6 +85,93 @@ const checkUserReminders = async (
   await saveTasks(latest.taskData, latest.metadata);
 };
 
+const dateOffset = (date: string, days: number) => {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
+const mostRecentFriday = (date: string, weekday: number) =>
+  dateOffset(
+    date,
+    weekday === 6
+      ? -1
+      : weekday === 7
+        ? -2
+        : weekday === 5
+          ? 0
+          : -((weekday + 2) % 7),
+  );
+
+const isDue = (clock: string, target: string) => {
+  const minute = (value: string) =>
+    Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  return (
+    minute(clock) >= minute(target) && minute(clock) - minute(target) <= 10
+  );
+};
+
+const checkUserWakeSchedule = async (
+  bot: Bot<BotContext>,
+  userId: number,
+  now: Date,
+) => {
+  const { metadata } = await queryTasks();
+  const timezone = metadata.timezone;
+  if (!timezone) return;
+
+  const date = formatInTimeZone(now, timezone, 'yyyy-MM-dd');
+  const clock = formatInTimeZone(now, timezone, 'HH:mm');
+  const weekday = Number(formatInTimeZone(now, timezone, 'i'));
+
+  if (
+    weekday === 5 &&
+    metadata.wake_friday_prompt_sent !== date &&
+    isDue(clock, metadata.wake_friday_prompt_time || '21:00')
+  ) {
+    await bot.api.sendMessage(
+      userId,
+      'Пятница на связи. Сегодня планируется алкоголь? От этого выберу время подъёма на выходных.',
+      {
+        reply_markup: new InlineKeyboard()
+          .text('🍻 Да, буду', 'wake:yes')
+          .text('🌿 Нет', 'wake:no'),
+      },
+    );
+    const latest = await queryTasks();
+    latest.metadata.wake_friday_prompt_sent = date;
+    await saveTasks(latest.taskData, latest.metadata);
+  }
+
+  const weekdayWakeTime = metadata.wake_weekday_time || '08:00';
+  const soberWakeTime = metadata.wake_weekend_sober_time || '09:00';
+  const drinkingWakeTime = metadata.wake_weekend_drinking_time || '10:00';
+  const weekendFriday = mostRecentFriday(date, weekday);
+  const weekendMode =
+    metadata.wake_weekend_mode_week === weekendFriday
+      ? metadata.wake_weekend_mode
+      : undefined;
+  const wakeTime =
+    weekday <= 5
+      ? weekdayWakeTime
+      : weekendMode === 'sober'
+        ? soberWakeTime
+        : drinkingWakeTime;
+
+  if (metadata.wake_last_sent !== date && isDue(clock, wakeTime)) {
+    const message =
+      weekday <= 5
+        ? `⏰ Подъём — ${wakeTime}. Доброе утро! Начинаем день спокойно, без рывка.`
+        : weekendMode === 'sober'
+          ? `⏰ Подъём — ${wakeTime}. Ты выбрал выходные без алкоголя — встаём и запускаем день.`
+          : `⏰ Подъём — ${wakeTime}. Если вчера отдых затянулся, вставай спокойно: вода, душ, без самобичевания.`;
+    await bot.api.sendMessage(userId, message);
+    const latest = await queryTasks();
+    latest.metadata.wake_last_sent = date;
+    await saveTasks(latest.taskData, latest.metadata);
+  }
+};
+
 let running = false;
 export const checkReminders = async (
   bot: Bot<BotContext>,
@@ -96,7 +183,10 @@ export const checkReminders = async (
   try {
     for (const userId of profileUsers()) {
       try {
-        await runForUser(userId, () => checkUserReminders(bot, userId, now));
+        await runForUser(userId, async () => {
+          await checkUserReminders(bot, userId, now);
+          await checkUserWakeSchedule(bot, userId, now);
+        });
       } catch {
         logger.warnWithContext({
           userId,
