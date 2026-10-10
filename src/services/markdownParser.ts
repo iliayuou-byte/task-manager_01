@@ -78,6 +78,14 @@ export const parseMarkdown = (content: string): ParseResult => {
           key === 'reminder_times' ||
           key === 'reminder_last_sent' ||
           key === 'reminder_saved_times' ||
+          key === 'wake_weekday_time' ||
+          key === 'wake_friday_prompt_time' ||
+          key === 'wake_weekend_sober_time' ||
+          key === 'wake_weekend_drinking_time' ||
+          key === 'wake_last_sent' ||
+          key === 'wake_friday_prompt_sent' ||
+          key === 'wake_weekend_mode' ||
+          key === 'wake_weekend_mode_week' ||
           key === 'calendar_imported_at' ||
           key === 'calendar_timezone'
         ) {
@@ -305,6 +313,24 @@ export const serializeTaskMarkdown = (
     lines.push(`reminder_times: ${metadata.reminder_times}`);
   if (metadata.reminder_last_sent)
     lines.push(`reminder_last_sent: ${metadata.reminder_last_sent}`);
+  if (metadata.wake_weekday_time)
+    lines.push(`wake_weekday_time: ${metadata.wake_weekday_time}`);
+  if (metadata.wake_friday_prompt_time)
+    lines.push(`wake_friday_prompt_time: ${metadata.wake_friday_prompt_time}`);
+  if (metadata.wake_weekend_sober_time)
+    lines.push(`wake_weekend_sober_time: ${metadata.wake_weekend_sober_time}`);
+  if (metadata.wake_weekend_drinking_time)
+    lines.push(
+      `wake_weekend_drinking_time: ${metadata.wake_weekend_drinking_time}`,
+    );
+  if (metadata.wake_last_sent)
+    lines.push(`wake_last_sent: ${metadata.wake_last_sent}`);
+  if (metadata.wake_friday_prompt_sent)
+    lines.push(`wake_friday_prompt_sent: ${metadata.wake_friday_prompt_sent}`);
+  if (metadata.wake_weekend_mode)
+    lines.push(`wake_weekend_mode: ${metadata.wake_weekend_mode}`);
+  if (metadata.wake_weekend_mode_week)
+    lines.push(`wake_weekend_mode_week: ${metadata.wake_weekend_mode_week}`);
   if (metadata.last_synced) {
     lines.push(`last_synced: ${metadata.last_synced}`);
   }
