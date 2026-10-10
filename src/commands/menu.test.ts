@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Bot } from 'grammy';
 import { registerTaskPickerAction } from '../actions/taskPicker.js';
 import * as aiClient from '../clients/ai.js';
+import { googleCalendarService } from '../clients/google-calendar.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { editSceneComposer } from '../scenes/editTaskScene.js';
@@ -145,6 +146,21 @@ const fixture = (user: number) => {
       },
     });
   };
+  const document = async (fileName: string) => {
+    const { text: _text, ...base } = message;
+    await bot.handleUpdate({
+      update_id: update++,
+      message: {
+        ...base,
+        document: {
+          file_id: 'test-file',
+          file_unique_id: 'test-unique-file',
+          file_name: fileName,
+          file_size: 128,
+        },
+      },
+    });
+  };
   const button = (label: string): string => {
     const call = [...calls]
       .reverse()
@@ -183,6 +199,7 @@ const fixture = (user: number) => {
     bot,
     text,
     click,
+    document,
     button,
     labels,
     tap,
@@ -1057,4 +1074,41 @@ test('calendar menu previews an ICS schedule and only replaces it after confirma
     { date: '2026-10-12', start: '09:00', title: 'Accounting' },
   ]);
   expect(f.data().metadata.calendar_timezone).toBe('Europe/Berlin');
+});
+
+test('uploading an ICS file saves the schedule and starts Google Calendar sync', async () => {
+  const f = fixture(602);
+  const oldToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nX-WR-TIMEZONE:Europe/Berlin\nBEGIN:VEVENT\nUID:lesson-1\nDTSTART;TZID=Europe/Berlin:20261012T090000\nDTEND;TZID=Europe/Berlin:20261012T101500\nSUMMARY:Physics\nEND:VEVENT\nEND:VCALENDAR`;
+  const fetchMock = spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(ics),
+  );
+  const configured = spyOn(
+    googleCalendarService,
+    'isConfigured',
+  ).mockReturnValue(true);
+  const sync = spyOn(googleCalendarService, 'syncSchedule').mockResolvedValue({
+    created: 1,
+    updated: 0,
+    removed: 0,
+  });
+  spies.push(fetchMock, configured, sync);
+  try {
+    await f.text(MENU.plan);
+    await f.tap('Импортировать .ics');
+    await f.document('HM-Link.ics');
+    expect(f.data().metadata.calendar_source_name).toBe('HM-Link.ics');
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(sync.mock.calls[0][0][0].title).toBe('Physics');
+    expect(
+      [...f.calls]
+        .reverse()
+        .find((call) => String(call.text).includes('Google Calendar обновлён'))
+        ?.text,
+    ).toContain('добавлено 1');
+  } finally {
+    if (oldToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = oldToken;
+  }
 });
