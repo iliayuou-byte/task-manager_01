@@ -86,10 +86,19 @@ export const parseMarkdown = (content: string): ParseResult => {
           key === 'wake_friday_prompt_sent' ||
           key === 'wake_weekend_mode' ||
           key === 'wake_weekend_mode_week' ||
+          key === 'fire_tv_host' ||
+          key === 'fire_tv_enabled' ||
           key === 'calendar_imported_at' ||
           key === 'calendar_timezone'
         ) {
           metadata[key] = value;
+        } else if (key === 'fire_tv_media') {
+          try {
+            const links: unknown = JSON.parse(value);
+            if (typeof links === 'string') metadata.fire_tv_media = links;
+          } catch {
+            /* Invalid TV media data is ignored. */
+          }
         } else if (key === 'calendar_events') {
           try {
             const events: unknown = JSON.parse(value);
@@ -331,6 +340,12 @@ export const serializeTaskMarkdown = (
     lines.push(`wake_weekend_mode: ${metadata.wake_weekend_mode}`);
   if (metadata.wake_weekend_mode_week)
     lines.push(`wake_weekend_mode_week: ${metadata.wake_weekend_mode_week}`);
+  if (metadata.fire_tv_host)
+    lines.push(`fire_tv_host: ${metadata.fire_tv_host}`);
+  if (metadata.fire_tv_enabled)
+    lines.push(`fire_tv_enabled: ${metadata.fire_tv_enabled}`);
+  if (metadata.fire_tv_media)
+    lines.push(`fire_tv_media: ${JSON.stringify(metadata.fire_tv_media)}`);
   if (metadata.last_synced) {
     lines.push(`last_synced: ${metadata.last_synced}`);
   }
