@@ -38,7 +38,13 @@ import { applyTimezone } from './timezone.js';
 interface MenuState {
   id: string;
   expires: number;
-  input?: 'brain' | 'time';
+  input?:
+    | 'brain'
+    | 'time'
+    | 'wake-weekday'
+    | 'wake-friday'
+    | 'wake-sober'
+    | 'wake-drinking';
   tasks?: Task[];
   today?: boolean;
   selected?: Task;
@@ -189,6 +195,136 @@ const showReminders = async (ctx: BotContext) => {
   );
 };
 
+const showWakeSettings = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const time = metadata.wake_weekday_time || '08:00';
+  const fridayTime = metadata.wake_friday_prompt_time || '21:00';
+  const soberTime = metadata.wake_weekend_sober_time || '09:00';
+  const drinkingTime = metadata.wake_weekend_drinking_time || '10:00';
+  const state = newState(ctx);
+  const { timezone, wake_weekend_mode, wake_weekend_mode_week } = metadata;
+  const today = timezone
+    ? formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
+    : '';
+  const weekday = timezone
+    ? Number(formatInTimeZone(new Date(), timezone, 'i'))
+    : undefined;
+  const weekendFriday =
+    weekday === undefined
+      ? ''
+      : (() => {
+          const friday = new Date(`${today}T12:00:00Z`);
+          friday.setUTCDate(
+            friday.getUTCDate() -
+              (weekday === 6
+                ? 1
+                : weekday === 7
+                  ? 2
+                  : weekday === 5
+                    ? 0
+                    : (weekday + 2) % 7),
+          );
+          return friday.toISOString().slice(0, 10);
+        })();
+  const weekendStatus =
+    wake_weekend_mode_week === weekendFriday
+      ? wake_weekend_mode === 'sober'
+        ? 'На ближайшие выходные выбран подъём в 09:00.'
+        : 'На ближайшие выходные выбран подъём в 10:00.'
+      : 'В пятницу в 21:00 спрошу про планы и выберу время на выходные.';
+  const keyboard = new InlineKeyboard()
+    .text('⏪ На 15 мин раньше', `menu:wakeearlier:${state.id}`)
+    .row()
+    .text('⏩ На 15 мин позже', `menu:wakelater:${state.id}`)
+    .row()
+    .text('↩️ Вернуть 08:00', `menu:wakereset:${state.id}`)
+    .row()
+    .text('✏️ Ввести подъём в будни', `menu:wakeinput:${state.id}:weekday`)
+    .row()
+    .text(
+      `✏️ Пятничный вопрос · ${fridayTime}`,
+      `menu:wakeinput:${state.id}:friday`,
+    )
+    .row()
+    .text(
+      `✏️ Выходной без алкоголя · ${soberTime}`,
+      `menu:wakeinput:${state.id}:sober`,
+    )
+    .row()
+    .text(
+      `✏️ Выходной после алкоголя · ${drinkingTime}`,
+      `menu:wakeinput:${state.id}:drinking`,
+    )
+    .row()
+    .text('⬅️ Настройки', 'menu:settings')
+    .text('🏠 Меню', 'menu:home');
+  await panelReply(
+    ctx,
+    `⏰ Режим подъёма\n\nБудни: ${time} (цель — 07:00). Сдвигай постепенно шагами по 15 минут или введи время вручную.\nВыходные: ${weekendStatus}\nЕсли не пьёшь — подъём в ${soberTime}; если пьёшь или не ответил — в ${drinkingTime}.\nПятничный вопрос — в ${fridayTime}.\nЧасовой пояс: ${timezone || 'сначала задай в настройках'}.`,
+    { reply_markup: keyboard },
+  );
+};
+
+const saveWakeInput = async (
+  ctx: BotContext,
+  state: MenuState,
+  raw: string,
+) => {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(raw))
+    return await panelReply(
+      ctx,
+      'Введи время в формате HH:MM, например 07:30.',
+    );
+  const { taskData, metadata } = await queryTasks();
+  if (!metadata.timezone)
+    return await panelReply(ctx, 'Сначала выбери часовой пояс в настройках.');
+  const field = (
+    {
+      'wake-weekday': 'wake_weekday_time',
+      'wake-friday': 'wake_friday_prompt_time',
+      'wake-sober': 'wake_weekend_sober_time',
+      'wake-drinking': 'wake_weekend_drinking_time',
+    } as const
+  )[
+    state.input as
+      | 'wake-weekday'
+      | 'wake-friday'
+      | 'wake-sober'
+      | 'wake-drinking'
+  ];
+  if (state.input === 'wake-weekday' && (raw < '07:00' || raw > '08:00'))
+    return await panelReply(
+      ctx,
+      'Будний подъём пока настраиваем в диапазоне 07:00–08:00.',
+    );
+  metadata[field] = raw;
+  state.input = undefined;
+  await saveTasks(taskData, metadata);
+  await showWakeSettings(ctx);
+};
+
+const adjustWakeTime = async (
+  ctx: BotContext,
+  action: 'earlier' | 'later' | 'reset',
+) => {
+  const { taskData, metadata } = await queryTasks();
+  if (!metadata.timezone)
+    return await panelReply(ctx, 'Сначала выбери часовой пояс в настройках.');
+  let time = metadata.wake_weekday_time || '08:00';
+  if (action === 'reset') time = '08:00';
+  else {
+    const minutes = Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+    const adjusted = Math.min(
+      8 * 60,
+      Math.max(7 * 60, minutes + (action === 'earlier' ? -15 : 15)),
+    );
+    time = `${String(Math.floor(adjusted / 60)).padStart(2, '0')}:${String(adjusted % 60).padStart(2, '0')}`;
+  }
+  metadata.wake_weekday_time = time;
+  await saveTasks(taskData, metadata);
+  await showWakeSettings(ctx);
+};
+
 const writeTimes = async (
   ctx: BotContext,
   state: MenuState,
@@ -290,6 +426,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         state.input = undefined;
         return await processBrainInput(ctx, text);
       }
+      if (state.input?.startsWith('wake-'))
+        return await saveWakeInput(ctx, state, text);
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text))
         return await panelReply(
           ctx,
@@ -349,6 +487,20 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         });
       }
       if (action === 'reminders') return await showReminders(ctx);
+      if (action === 'wake') return await showWakeSettings(ctx);
+      if (action === 'wakeinput') {
+        if (
+          !['weekday', 'friday', 'sober', 'drinking'].includes(value || '') ||
+          !state
+        )
+          return;
+        state.input = `wake-${value}` as MenuState['input'];
+        return await panelReply(
+          ctx,
+          `Введи время в формате HH:MM.${value === 'weekday' ? ' Для будней — от 07:00 до 08:00.' : ''}`,
+          { reply_markup: navigationKeyboard('menu:wake') },
+        );
+      }
       if (action === 'timezone') {
         newState(ctx);
         return await panelReply(ctx, '🌍 Выбери часовой пояс:', {
@@ -390,6 +542,9 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         return;
       }
       if (!state) return;
+      if (action === 'wakeearlier') return await adjustWakeTime(ctx, 'earlier');
+      if (action === 'wakelater') return await adjustWakeTime(ctx, 'later');
+      if (action === 'wakereset') return await adjustWakeTime(ctx, 'reset');
       if (action === 'toggle')
         return await writeTimes(
           ctx,
@@ -520,6 +675,62 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       );
     } finally {
       if (state) state.busy = false;
+    }
+  });
+
+  composer.callbackQuery(/^wake:(yes|no)$/, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      await ctx.answerCallbackQuery({ text: 'Открой личный чат с ботом.' });
+      return;
+    }
+    try {
+      const { taskData, metadata } = await queryTasks();
+      if (!metadata.timezone) {
+        await ctx.answerCallbackQuery({ text: 'Сначала задай часовой пояс.' });
+        return;
+      }
+      const date = formatInTimeZone(
+        new Date(),
+        metadata.timezone,
+        'yyyy-MM-dd',
+      );
+      const weekday = Number(
+        formatInTimeZone(new Date(), metadata.timezone, 'i'),
+      );
+      if (weekday < 5 || weekday > 7) {
+        await ctx.answerCallbackQuery({ text: 'Этот вопрос уже устарел.' });
+        return;
+      }
+      const friday = new Date(`${date}T12:00:00Z`);
+      friday.setUTCDate(
+        friday.getUTCDate() - (weekday === 6 ? 1 : weekday === 7 ? 2 : 0),
+      );
+      metadata.wake_weekend_mode = ctx.match[1] === 'no' ? 'sober' : 'drinking';
+      metadata.wake_weekend_mode_week = friday.toISOString().slice(0, 10);
+      await saveTasks(taskData, metadata);
+      const weekendWakeTime =
+        ctx.match[1] === 'no'
+          ? metadata.wake_weekend_sober_time || '09:00'
+          : metadata.wake_weekend_drinking_time || '10:00';
+      await ctx.answerCallbackQuery({
+        text:
+          ctx.match[1] === 'no'
+            ? `Окей, подъём в ${weekendWakeTime}.`
+            : `Понял, подъём в ${weekendWakeTime}.`,
+      });
+      await panelReply(
+        ctx,
+        ctx.match[1] === 'no'
+          ? `🌿 Записал: на эти выходные ставлю подъём на ${weekendWakeTime}.`
+          : `🍻 Записал: на эти выходные ставлю подъём на ${weekendWakeTime}. Береги себя.`,
+      );
+    } catch (error) {
+      logAndReplyError(
+        ctx,
+        'WAKE_ANSWER',
+        error,
+        'Не получилось сохранить ответ.',
+      );
     }
   });
 };
