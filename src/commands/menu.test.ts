@@ -1076,7 +1076,7 @@ test('calendar menu previews an ICS schedule and only replaces it after confirma
   expect(f.data().metadata.calendar_timezone).toBe('Europe/Berlin');
 });
 
-test('uploading an ICS file saves the schedule and starts Google Calendar sync', async () => {
+test('sending an ICS file directly saves the schedule and starts Google Calendar sync', async () => {
   const f = fixture(602);
   const oldToken = process.env.TELEGRAM_BOT_TOKEN;
   process.env.TELEGRAM_BOT_TOKEN = 'test-token';
@@ -1095,8 +1095,6 @@ test('uploading an ICS file saves the schedule and starts Google Calendar sync',
   });
   spies.push(fetchMock, configured, sync);
   try {
-    await f.text(MENU.plan);
-    await f.tap('Импортировать .ics');
     await f.document('HM-Link.ics');
     expect(f.data().metadata.calendar_source_name).toBe('HM-Link.ics');
     expect(sync).toHaveBeenCalledTimes(1);
