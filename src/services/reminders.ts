@@ -4,6 +4,12 @@ import logger from '../core/logger.js';
 import type { BotContext } from '../middlewares/session.js';
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { parseFireTvMedia, wakeFireTv } from './fireTv.js';
+import {
+  morningExpiry,
+  morningItems,
+  morningKeyboard,
+  morningText,
+} from './morningChecklist.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
 import { rememberTaskNumbers } from './taskNumbers.js';
@@ -118,6 +124,45 @@ const checkUserWakeSchedule = async (
   now: Date,
 ) => {
   const { metadata } = await queryTasks();
+  if (
+    metadata.morning_message_id &&
+    (metadata.morning_enabled === 'false' ||
+      (metadata.morning_expires_at &&
+        now.getTime() >= Date.parse(metadata.morning_expires_at)))
+  ) {
+    try {
+      await bot.api.deleteMessage(userId, Number(metadata.morning_message_id));
+    } catch (error) {
+      logger.warnWithContext({
+        userId,
+        op: 'MORNING_CLEANUP',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const permanentFailure =
+        typeof error === 'object' &&
+        error !== null &&
+        'error_code' in error &&
+        error.error_code === 400;
+      // A stopped server may resume after Telegram's deletion window.
+      const longExpired =
+        !!metadata.morning_expires_at &&
+        now.getTime() - Date.parse(metadata.morning_expires_at) >=
+          48 * 60 * 60_000;
+      if (!permanentFailure && !longExpired) return;
+    }
+    const latest = await queryTasks();
+    if (latest.metadata.morning_message_id === metadata.morning_message_id) {
+      delete latest.metadata.morning_message_id;
+      delete latest.metadata.morning_active_date;
+      delete latest.metadata.morning_active_items;
+      delete latest.metadata.morning_done;
+      delete latest.metadata.morning_expires_at;
+      delete latest.metadata.morning_wake_time;
+      delete latest.metadata.morning_note;
+      if (!(await saveTasks(latest.taskData, latest.metadata)))
+        throw new Error('Morning cleanup was not saved');
+    }
+  }
   const timezone = metadata.timezone;
   if (!timezone) return;
 
@@ -141,7 +186,8 @@ const checkUserWakeSchedule = async (
     );
     const latest = await queryTasks();
     latest.metadata.wake_friday_prompt_sent = date;
-    await saveTasks(latest.taskData, latest.metadata);
+    if (!(await saveTasks(latest.taskData, latest.metadata)))
+      throw new Error('Friday prompt was not saved');
   }
 
   const weekdayWakeTime = metadata.wake_weekday_time || '08:00';
@@ -184,10 +230,34 @@ const checkUserWakeSchedule = async (
         : weekendMode === 'sober'
           ? `⏰ Подъём — ${wakeTime}. Ты выбрал выходные без алкоголя — встаём и запускаем день.${tvResult}`
           : `⏰ Подъём — ${wakeTime}. Если вчера отдых затянулся, вставай спокойно: вода, душ, без самобичевания.${tvResult}`;
-    await bot.api.sendMessage(userId, message);
+    let morningMessageId: number | undefined;
+    let items: string[] | undefined;
+    if (weekday <= 5 && metadata.morning_enabled !== 'false') {
+      items = morningItems(metadata);
+      const morningMessage = await bot.api.sendMessage(
+        userId,
+        morningText(items, [], wakeTime, tvResult.trim()),
+        { reply_markup: morningKeyboard(date, items, []) },
+      );
+      morningMessageId = morningMessage.message_id;
+    } else await bot.api.sendMessage(userId, message);
     const latest = await queryTasks();
     latest.metadata.wake_last_sent = date;
-    await saveTasks(latest.taskData, latest.metadata);
+    if (morningMessageId !== undefined && items) {
+      latest.metadata.morning_active_date = date;
+      latest.metadata.morning_active_items = JSON.stringify(items);
+      latest.metadata.morning_message_id = String(morningMessageId);
+      latest.metadata.morning_expires_at = morningExpiry(
+        date,
+        wakeTime,
+        timezone,
+      ).toISOString();
+      latest.metadata.morning_wake_time = wakeTime;
+      latest.metadata.morning_done = '[]';
+      latest.metadata.morning_note = tvResult.trim();
+    }
+    if (!(await saveTasks(latest.taskData, latest.metadata)))
+      throw new Error('Wake schedule was not saved');
   }
 };
 

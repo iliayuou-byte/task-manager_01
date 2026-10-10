@@ -205,6 +205,48 @@ test('reminder buttons preserve disabled schedule and restore it', async () => {
   expect(f.data().metadata.reminder_times).toBe('08:20,19:00');
 });
 
+test('morning list settings edit the next weekday checklist and can be disabled', async () => {
+  const f = fixture(590);
+  await f.click('menu:morning');
+  expect(f.labels()).toContain('🔕 Выключить');
+  await f.tap('▶️');
+  expect(f.labels()).toContain('➕ Добавить пункт');
+  await f.tap('Добавить пункт');
+  await f.text('Выпить воды');
+  expect(JSON.parse(f.data().metadata.morning_items || '[]')).toContain(
+    'Выпить воды',
+  );
+  await f.click('menu:morning');
+  await f.tap('Выключить');
+  expect(f.data().metadata.morning_enabled).toBe('false');
+});
+
+test('morning checklist button updates progress and rejects an expired list', async () => {
+  const f = fixture(591);
+  Object.assign(f.data().metadata, {
+    morning_active_date: '2026-10-12',
+    morning_message_id: '1',
+    morning_active_items: JSON.stringify(['Завтрак', 'Гигиена']),
+    morning_expires_at: new Date(Date.now() + 60_000).toISOString(),
+    morning_wake_time: '08:00',
+    morning_done: '[]',
+  });
+  await f.click('morning:2026-10-12:0');
+  expect(f.data().metadata.morning_done).toBe('[0]');
+  expect(
+    f.calls.some(
+      (call) =>
+        call.method === 'editMessageText' &&
+        String(call.text).includes('✅ 1. Завтрак'),
+    ),
+  ).toBe(true);
+  f.data().metadata.morning_expires_at = new Date(
+    Date.now() - 60_000,
+  ).toISOString();
+  await f.click('morning:2026-10-12:1');
+  expect(f.data().metadata.morning_done).toBe('[0]');
+});
+
 test('task buttons keep their target after reordering and reject old cards', async () => {
   const f = fixture(502);
   await f.text(MENU.all);

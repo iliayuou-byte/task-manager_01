@@ -226,3 +226,13 @@ expanded events and stores normalized events in the user's GitHub frontmatter.
 Treat feed content as untrusted; do not expose Telegram download URLs/errors. The HM
 Link export is a snapshot unless it contains a subscription URL; refresh requires
 re-importing an updated file.
+
+### Weekday morning checklist
+
+`services/morningChecklist.ts` validates the editable morning items and renders the
+standalone Telegram checklist. `services/reminders.ts` sends it at the existing
+weekday wake time and deletes it one hour after that scheduled time. The message ID,
+expiration and progress live in GitHub frontmatter so cleanup survives restarts.
+`commands/menu.ts` owns item editing and validates chat, message ID and expiry for
+completion taps. These checklist items are separate from saved tasks and never
+appear on weekends. Settings edits affect the next day's checklist.

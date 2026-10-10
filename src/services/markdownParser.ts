@@ -86,12 +86,29 @@ export const parseMarkdown = (content: string): ParseResult => {
           key === 'wake_friday_prompt_sent' ||
           key === 'wake_weekend_mode' ||
           key === 'wake_weekend_mode_week' ||
+          key === 'morning_enabled' ||
+          key === 'morning_active_date' ||
+          key === 'morning_message_id' ||
+          key === 'morning_expires_at' ||
+          key === 'morning_wake_time' ||
           key === 'fire_tv_host' ||
           key === 'fire_tv_enabled' ||
           key === 'calendar_imported_at' ||
           key === 'calendar_timezone'
         ) {
           metadata[key] = value;
+        } else if (
+          key === 'morning_items' ||
+          key === 'morning_active_items' ||
+          key === 'morning_done' ||
+          key === 'morning_note'
+        ) {
+          try {
+            const stored: unknown = JSON.parse(value);
+            if (typeof stored === 'string') metadata[key] = stored;
+          } catch {
+            /* Ignore invalid checklist data. */
+          }
         } else if (key === 'fire_tv_media') {
           try {
             const links: unknown = JSON.parse(value);
@@ -340,6 +357,26 @@ export const serializeTaskMarkdown = (
     lines.push(`wake_weekend_mode: ${metadata.wake_weekend_mode}`);
   if (metadata.wake_weekend_mode_week)
     lines.push(`wake_weekend_mode_week: ${metadata.wake_weekend_mode_week}`);
+  if (metadata.morning_enabled)
+    lines.push(`morning_enabled: ${metadata.morning_enabled}`);
+  if (metadata.morning_items)
+    lines.push(`morning_items: ${JSON.stringify(metadata.morning_items)}`);
+  if (metadata.morning_active_items)
+    lines.push(
+      `morning_active_items: ${JSON.stringify(metadata.morning_active_items)}`,
+    );
+  if (metadata.morning_active_date)
+    lines.push(`morning_active_date: ${metadata.morning_active_date}`);
+  if (metadata.morning_message_id)
+    lines.push(`morning_message_id: ${metadata.morning_message_id}`);
+  if (metadata.morning_expires_at)
+    lines.push(`morning_expires_at: ${metadata.morning_expires_at}`);
+  if (metadata.morning_done)
+    lines.push(`morning_done: ${JSON.stringify(metadata.morning_done)}`);
+  if (metadata.morning_wake_time)
+    lines.push(`morning_wake_time: ${metadata.morning_wake_time}`);
+  if (metadata.morning_note)
+    lines.push(`morning_note: ${JSON.stringify(metadata.morning_note)}`);
   if (metadata.fire_tv_host)
     lines.push(`fire_tv_host: ${metadata.fire_tv_host}`);
   if (metadata.fire_tv_enabled)

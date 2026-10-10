@@ -59,6 +59,15 @@ export interface Metadata {
   wake_friday_prompt_sent?: string;
   wake_weekend_mode?: string;
   wake_weekend_mode_week?: string;
+  morning_enabled?: string;
+  morning_items?: string;
+  morning_active_items?: string;
+  morning_active_date?: string;
+  morning_message_id?: string;
+  morning_expires_at?: string;
+  morning_done?: string;
+  morning_wake_time?: string;
+  morning_note?: string;
   fire_tv_host?: string;
   fire_tv_enabled?: string;
   fire_tv_media?: string;

@@ -11,6 +11,13 @@ import {
   parseFireTvMedia,
   wakeFireTv,
 } from '../services/fireTv.js';
+import {
+  DEFAULT_MORNING_ITEMS,
+  morningDone,
+  morningItems,
+  morningKeyboard,
+  morningText,
+} from '../services/morningChecklist.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
 import { saveTasks } from '../services/saveTasks.js';
@@ -50,8 +57,11 @@ interface MenuState {
     | 'wake-friday'
     | 'wake-sober'
     | 'wake-drinking'
+    | 'morning-add'
+    | 'morning-edit'
     | 'tv-host'
     | 'tv-media';
+  morningIndex?: number;
   tasks?: Task[];
   today?: boolean;
   selected?: Task;
@@ -270,6 +280,66 @@ const showWakeSettings = async (ctx: BotContext) => {
     `⏰ Режим подъёма\n\nБудни: ${time} (цель — 07:00). Сдвигай постепенно шагами по 15 минут или введи время вручную.\nВыходные: ${weekendStatus}\nЕсли не пьёшь — подъём в ${soberTime}; если пьёшь или не ответил — в ${drinkingTime}.\nПятничный вопрос — в ${fridayTime}.\nЧасовой пояс: ${timezone || 'сначала задай в настройках'}.`,
     { reply_markup: keyboard },
   );
+};
+
+const showMorningSettings = async (ctx: BotContext) => {
+  const { metadata } = await queryTasks();
+  const items = morningItems(metadata);
+  const state = newState(ctx);
+  const enabled = metadata.morning_enabled !== 'false';
+  const keyboard = new InlineKeyboard()
+    .text(
+      enabled ? '🔕 Выключить' : '🔔 Включить',
+      `menu:morningtoggle:${state.id}`,
+    )
+    .row();
+  items.forEach((_, index) => {
+    keyboard
+      .text(`✏️ ${index + 1}`, `menu:morningedit:${state.id}:${index}`)
+      .text(`🗑 ${index + 1}`, `menu:morningdelete:${state.id}:${index}`)
+      .row();
+  });
+  if (items.length < 8)
+    keyboard.text('➕ Добавить пункт', `menu:morningadd:${state.id}`).row();
+  keyboard
+    .text('↩️ Вернуть стандартный список', `menu:morningreset:${state.id}`)
+    .row()
+    .text('⬅️ Настройки', 'menu:settings')
+    .text('🏠 Меню', 'menu:home');
+  await panelReply(
+    ctx,
+    `☀️ Утренний список ${enabled ? 'включён' : 'выключен'}\n\n${items.map((item, index) => `${index + 1}. ${item}`).join('\n')}\n\nВ будни появляется в заданное время подъёма и удаляется через час. Изменения пунктов начнут действовать следующим утром.`,
+    { reply_markup: keyboard },
+  );
+};
+
+const saveMorningInput = async (
+  ctx: BotContext,
+  state: MenuState,
+  text: string,
+) => {
+  if (text.length > 60 || !text.trim() || /[\r\n]/.test(text))
+    return await panelReply(
+      ctx,
+      'Напиши один пункт длиной от 1 до 60 символов.',
+    );
+  const { taskData, metadata } = await queryTasks();
+  const items = morningItems(metadata);
+  if (state.input === 'morning-add') {
+    if (items.length >= 8) return await showMorningSettings(ctx);
+    items.push(text.trim());
+  } else {
+    const index = state.morningIndex;
+    if (index === undefined || index < 0 || index >= items.length)
+      return await showMorningSettings(ctx);
+    items[index] = text.trim();
+  }
+  metadata.morning_items = JSON.stringify(items);
+  state.input = undefined;
+  state.morningIndex = undefined;
+  if (!(await saveTasks(taskData, metadata)))
+    throw new Error('Morning list was not saved');
+  await showMorningSettings(ctx);
 };
 
 const saveWakeInput = async (
@@ -501,6 +571,8 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       }
       if (state.input?.startsWith('wake-'))
         return await saveWakeInput(ctx, state, text);
+      if (state.input?.startsWith('morning-'))
+        return await saveMorningInput(ctx, state, text);
       if (state.input?.startsWith('tv-'))
         return await saveFireTvInput(ctx, state, text);
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text))
@@ -563,6 +635,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       }
       if (action === 'reminders') return await showReminders(ctx);
       if (action === 'wake') return await showWakeSettings(ctx);
+      if (action === 'morning') return await showMorningSettings(ctx);
       if (action === 'tv') return await showFireTvSettings(ctx);
       if (action === 'wakeinput') {
         if (
@@ -576,6 +649,56 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           `Введи время в формате HH:MM.${value === 'weekday' ? ' Для будней — от 07:00 до 08:00.' : ''}`,
           { reply_markup: navigationKeyboard('menu:wake') },
         );
+      }
+      if (action === 'morningadd' || action === 'morningedit') {
+        if (!state) return;
+        const items = morningItems((await queryTasks()).metadata);
+        const index = Number(value);
+        if (
+          action === 'morningedit' &&
+          (!Number.isInteger(index) || index < 0 || index >= items.length)
+        )
+          return await showMorningSettings(ctx);
+        state.input = action === 'morningadd' ? 'morning-add' : 'morning-edit';
+        state.morningIndex = action === 'morningedit' ? index : undefined;
+        return await panelReply(
+          ctx,
+          action === 'morningadd'
+            ? 'Напиши новый пункт утреннего списка.'
+            : `Замени пункт «${items[index]}»: напиши новый текст.`,
+          { reply_markup: navigationKeyboard('menu:morning') },
+        );
+      }
+      if (
+        action === 'morningdelete' ||
+        action === 'morningreset' ||
+        action === 'morningtoggle'
+      ) {
+        const { taskData, metadata } = await queryTasks();
+        if (action === 'morningtoggle') {
+          metadata.morning_enabled =
+            metadata.morning_enabled === 'false' ? 'true' : 'false';
+        } else if (action === 'morningreset') {
+          metadata.morning_items = JSON.stringify(DEFAULT_MORNING_ITEMS);
+        } else {
+          const items = morningItems(metadata);
+          const index = Number(value);
+          if (!Number.isInteger(index) || index < 0 || index >= items.length)
+            return await showMorningSettings(ctx);
+          if (items.length === 1)
+            return await panelReply(
+              ctx,
+              'Оставь хотя бы один пункт в списке.',
+              {
+                reply_markup: navigationKeyboard('menu:morning'),
+              },
+            );
+          items.splice(index, 1);
+          metadata.morning_items = JSON.stringify(items);
+        }
+        if (!(await saveTasks(taskData, metadata)))
+          throw new Error('Morning settings were not saved');
+        return await showMorningSettings(ctx);
       }
       if (action === 'tvhost' || action === 'tvmedia') {
         if (!state) return;
@@ -831,6 +954,61 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         'WAKE_ANSWER',
         error,
         'Не получилось сохранить ответ.',
+      );
+    }
+  });
+
+  composer.callbackQuery(/^morning:(\d{4}-\d{2}-\d{2}):(\d)$/, async (ctx) => {
+    if (ctx.chat?.type !== 'private' || ctx.chat.id !== ctx.from.id) {
+      await ctx.answerCallbackQuery({ text: 'Открой личный чат с ботом.' });
+      return;
+    }
+    try {
+      const { taskData, metadata } = await queryTasks();
+      const items = morningItems({
+        morning_items: metadata.morning_active_items,
+      });
+      const index = Number(ctx.match[2]);
+      const expires = Date.parse(metadata.morning_expires_at || '');
+      if (
+        metadata.morning_enabled === 'false' ||
+        metadata.morning_active_date !== ctx.match[1] ||
+        metadata.morning_message_id !==
+          String(ctx.callbackQuery.message?.message_id) ||
+        !Number.isFinite(expires) ||
+        Date.now() >= expires ||
+        index >= items.length
+      ) {
+        await ctx.answerCallbackQuery({
+          text: 'Этот утренний список уже закрыт.',
+        });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      const done = morningDone(metadata, items.length);
+      const next = done.includes(index)
+        ? done.filter((item) => item !== index)
+        : [...done, index].sort((a, b) => a - b);
+      metadata.morning_done = JSON.stringify(next);
+      if (!(await saveTasks(taskData, metadata)))
+        throw new Error('Morning progress was not saved');
+      await ctx.api.editMessageText(
+        ctx.chat.id,
+        Number(metadata.morning_message_id),
+        morningText(
+          items,
+          next,
+          metadata.morning_wake_time || metadata.wake_weekday_time || '08:00',
+          metadata.morning_note || '',
+        ),
+        { reply_markup: morningKeyboard(ctx.match[1], items, next) },
+      );
+    } catch (error) {
+      logAndReplyError(
+        ctx,
+        'MORNING_CHECKLIST',
+        error,
+        'Не удалось обновить утренний список.',
       );
     }
   });

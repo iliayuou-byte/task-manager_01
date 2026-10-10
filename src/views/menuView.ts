@@ -35,6 +35,8 @@ export const settingsKeyboard = () =>
     .row()
     .text('⏰ Режим подъёма', 'menu:wake')
     .row()
+    .text('☀️ Утренний список', 'menu:morning')
+    .row()
     .text('📺 Утренний телевизор', 'menu:tv')
     .row()
     .text('🧠 Приоритеты ИИ', 'ai:open')
