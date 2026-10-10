@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { formatInTimeZone } from 'date-fns-tz';
 import { type Composer, InlineKeyboard } from 'grammy';
+import { googleCalendarService } from '../clients/google-calendar.js';
 import type { BotContext } from '../middlewares/session.js';
 import { panelReply } from '../services/chatPanel.js';
 import {
@@ -12,6 +13,7 @@ import {
 } from '../services/icsCalendar.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
+import { canUseOwnerCalendar } from '../services/userScope.js';
 import { splitMessages } from '../views/eisenhowerView.js';
 import { MENU } from '../views/menuView.js';
 
@@ -22,8 +24,10 @@ interface CalendarState {
   step?: 'upload';
   preview?: ImportedCalendar;
   source?: string;
+  hasSchedule?: boolean;
 }
 const states = new Map<string, CalendarState>();
+const syncing = new Set<number>();
 const chatKey = (ctx: BotContext) => `${ctx.from!.id}:${ctx.chat!.id}`;
 const createState = (ctx: BotContext): CalendarState => {
   for (const [key, value] of states)
@@ -47,6 +51,8 @@ const keyboard = (state: CalendarState, includeSave = false) => {
   else if (state.step !== 'upload') {
     result.text('📅 План на сегодня', `calendar:today:${state.id}`).row();
     result.text('📤 Импортировать .ics', `calendar:import:${state.id}`).row();
+    if (state.hasSchedule)
+      result.text('🔄 В Google Calendar', `calendar:sync:${state.id}`).row();
   }
   result
     .text('⬅️ Назад', `calendar:open:${state.id}`)
@@ -69,6 +75,7 @@ const showCalendar = async (ctx: BotContext) => {
   const state = createState(ctx);
   const { metadata } = await queryTasks();
   const events = readScheduleEvents(metadata.calendar_events);
+  state.hasSchedule = events.length > 0;
   const last = metadata.calendar_imported_at
     ? `\nИмпортировано: ${metadata.calendar_imported_at.slice(0, 10)} · ${metadata.calendar_source_name || '.ics'}`
     : '\nРасписание пока не загружено.';
@@ -102,7 +109,68 @@ const showToday = async (ctx: BotContext) => {
       lines.push(`${task.time ? `${task.time} · ` : '• '}${task.name}`);
   }
   const state = createState(ctx);
+  state.hasSchedule = readScheduleEvents(metadata.calendar_events).length > 0;
   return show(ctx, lines.join('\n'), state);
+};
+
+const syncSavedCalendar = async (
+  ctx: BotContext,
+  calendar: ImportedCalendar,
+  prefix: string,
+) => {
+  let suffix: string;
+  if (!canUseOwnerCalendar()) {
+    suffix = 'Google Calendar доступен только владельцу бота.';
+  } else if (!googleCalendarService.isConfigured()) {
+    suffix =
+      'Google Calendar пока не подключён. Расписание сохранено в боте; после настройки нажми «🔄 В Google Calendar».';
+  } else if (syncing.has(ctx.from!.id)) {
+    suffix = 'Синхронизация уже идёт. Подожди её завершения.';
+  } else {
+    syncing.add(ctx.from!.id);
+    try {
+      await panelReply(
+        ctx,
+        `📅 Сохранил расписание. Переношу ${calendar.events.length} занятий в Google Calendar…`,
+      );
+      const result = await googleCalendarService.syncSchedule(
+        calendar.events,
+        calendar.timezone,
+      );
+      suffix = `Google Calendar обновлён: добавлено ${result.created}, обновлено ${result.updated}, убрано старых ${result.removed}.`;
+    } catch {
+      suffix =
+        'Не удалось закончить синхронизацию с Google Calendar. Расписание в боте сохранено; повтори кнопкой «🔄 В Google Calendar». Дубли при повторе не появятся.';
+    } finally {
+      syncing.delete(ctx.from!.id);
+    }
+  }
+  const state = createState(ctx);
+  state.hasSchedule = true;
+  return show(ctx, `${prefix}\n\n${suffix}`, state);
+};
+
+const saveCalendar = async (
+  ctx: BotContext,
+  calendar: ImportedCalendar,
+  source: string,
+) => {
+  if (syncing.has(ctx.from!.id))
+    return panelReply(ctx, 'Дождись завершения текущей синхронизации.');
+  const current = await queryTasks();
+  current.metadata.calendar_events = JSON.stringify(calendar.events);
+  current.metadata.calendar_timezone = calendar.timezone;
+  current.metadata.calendar_source_name = source
+    .replace(/[\r\n"\\]/g, '')
+    .slice(0, 100);
+  current.metadata.calendar_imported_at = new Date().toISOString();
+  if (!(await saveTasks(current.taskData, current.metadata)))
+    throw new Error('Не удалось сохранить календарь.');
+  return syncSavedCalendar(
+    ctx,
+    calendar,
+    `✅ Расписание импортировано: ${calendar.events.length} занятий, ${calendar.firstDate} — ${calendar.lastDate}.`,
+  );
 };
 const preview = async (
   ctx: BotContext,
@@ -121,7 +189,7 @@ const preview = async (
     .map(([title, count]) => `• ${title} — ${count}`);
   return show(
     ctx,
-    `🔎 Проверь импорт расписания\n\nСобытий: ${calendar.events.length}\nЧасовой пояс: ${calendar.timezone}\nПериод: ${calendar.firstDate} — ${calendar.lastDate}\n\n${sample.join('\n')}${byCourse.size > 12 ? `\n…и ещё ${byCourse.size - 12} курсов` : ''}\n\nПосле подтверждения новое расписание заменит сохранённое.`,
+    `🔎 Проверь импорт расписания\n\nСобытий: ${calendar.events.length}\nЧасовой пояс: ${calendar.timezone}\nПериод: ${calendar.firstDate} — ${calendar.lastDate}\n\n${sample.join('\n')}${byCourse.size > 12 ? `\n…и ещё ${byCourse.size - 12} курсов` : ''}\n\nПосле подтверждения новое расписание заменит сохранённое в боте и обновит занятия в Google Calendar. Остальные события не трогаю.`,
     state,
     true,
   );
@@ -169,20 +237,30 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
       });
     state.busy = true;
     try {
-      const file = await ctx.api.getFile(document.file_id);
-      const token = process.env.TELEGRAM_BOT_TOKEN;
-      if (!file.file_path || !token) throw new Error('download');
-      const response = await fetch(
-        `https://api.telegram.org/file/bot${token}/${file.file_path}`,
-        { signal: AbortSignal.timeout(15_000), redirect: 'error' },
-      );
-      const decoded = await readIcsResponse(response);
+      let calendar: ImportedCalendar;
+      try {
+        const file = await ctx.api.getFile(document.file_id);
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        if (!file.file_path || !token) throw new Error('download');
+        const response = await fetch(
+          `https://api.telegram.org/file/bot${token}/${file.file_path}`,
+          { signal: AbortSignal.timeout(15_000), redirect: 'error' },
+        );
+        calendar = parseIcsCalendar(await readIcsResponse(response));
+      } catch {
+        if (states.get(chatKey(ctx)) !== state || state.expires < Date.now())
+          return;
+        return panelReply(
+          ctx,
+          'Не получилось прочитать файл. Проверь формат .ics и попробуй экспортировать расписание заново.',
+          { reply_markup: keyboard(state) },
+        );
+      }
       if (states.get(chatKey(ctx)) !== state || state.expires < Date.now())
         return;
-      return await preview(
+      return await saveCalendar(
         ctx,
-        state,
-        parseIcsCalendar(decoded),
+        calendar,
         document.file_name || 'schedule.ics',
       );
     } catch {
@@ -190,7 +268,7 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
         return;
       return panelReply(
         ctx,
-        'Не получилось прочитать файл. Проверь формат .ics и попробуй экспортировать расписание заново.',
+        'Файл прочитан, но сохранить расписание не удалось. Попробуй ещё раз.',
         { reply_markup: keyboard(state) },
       );
     } finally {
@@ -198,7 +276,7 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
     }
   });
   composer.callbackQuery(
-    /^calendar:(open|today|import|save):([\w-]+)$/,
+    /^calendar:(open|today|import|save|sync):([\w-]+)$/,
     async (ctx) => {
       const [, action, id] = ctx.match;
       const state = states.get(chatKey(ctx));
@@ -222,31 +300,33 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
           state.step = 'upload';
           return await show(
             ctx,
-            '📤 Отправь экспорт расписания из HM Link файлом .ics. Перед сохранением я проверю даты, часовой пояс и список занятий.',
+            '📤 Отправь экспорт расписания из HM Link файлом .ics. После проверки файла расписание сразу сохранится в боте и отправится в Google Calendar.',
             state,
           );
         }
+        if (action === 'sync') {
+          const { metadata } = await queryTasks();
+          const events = readScheduleEvents(metadata.calendar_events);
+          if (!events.length)
+            throw new Error('Сначала загрузи расписание .ics.');
+          const timezone =
+            metadata.calendar_timezone || metadata.timezone || 'UTC';
+          return await syncSavedCalendar(
+            ctx,
+            {
+              timezone,
+              events,
+              firstDate: events[0].date,
+              lastDate: events[events.length - 1].date,
+            },
+            `📅 Сохранено занятий: ${events.length}.`,
+          );
+        }
         if (!state.preview) throw new Error('Подтверди импорт ещё раз.');
-        const current = await queryTasks();
-        current.metadata.calendar_events = JSON.stringify(state.preview.events);
-        current.metadata.calendar_timezone = state.preview.timezone;
-        current.metadata.calendar_source_name = (state.source || 'schedule.ics')
-          .replace(/[\r\n"\\]/g, '')
-          .slice(0, 100);
-        current.metadata.calendar_imported_at = new Date().toISOString();
-        if (!(await saveTasks(current.taskData, current.metadata)))
-          throw new Error('Не удалось сохранить календарь.');
-        return await panelReply(
+        return await saveCalendar(
           ctx,
-          `✅ Расписание импортировано: ${state.preview.events.length} занятий, ${state.preview.firstDate} — ${state.preview.lastDate}.`,
-          {
-            reply_markup: new InlineKeyboard()
-              .text(
-                '📅 План на сегодня',
-                `calendar:today:${createState(ctx).id}`,
-              )
-              .text('🏠 Меню', 'menu:home'),
-          },
+          state.preview,
+          state.source || 'schedule.ics',
         );
       } catch (error) {
         return panelReply(
@@ -269,7 +349,7 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
       state.step = 'upload';
       return show(
         ctx,
-        '📤 Отправь экспорт расписания из HM Link файлом .ics.',
+        '📤 Отправь экспорт расписания из HM Link файлом .ics. После проверки бот сразу сохранит и отправит занятия в Google Calendar.',
         state,
       );
     }
