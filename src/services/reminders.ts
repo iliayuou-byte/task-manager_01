@@ -212,8 +212,10 @@ const checkUserWakeSchedule = async (
         const links = metadata.fire_tv_media
           ? parseFireTvMedia(metadata.fire_tv_media)
           : [];
-        await wakeFireTv(metadata.fire_tv_host, links);
-        tvResult = '\n📺 Телевизору отправлена команда пробуждения.';
+        const selected = await wakeFireTv(metadata.fire_tv_host, links);
+        tvResult = selected
+          ? `\n📺 Команда запуска видео отправлена: ${selected}`
+          : '\n📺 Телевизор включён. Добавь ссылку в настройках ТВ, чтобы запускалось видео.';
       } catch (error) {
         logger.warnWithContext({
           userId,

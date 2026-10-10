@@ -236,3 +236,12 @@ expiration and progress live in GitHub frontmatter so cleanup survives restarts.
 `commands/menu.ts` owns item editing and validates chat, message ID and expiry for
 completion taps. These checklist items are separate from saved tasks and never
 appear on weekends. Settings edits affect the next day's checklist.
+
+### Fire TV media launch
+
+`services/fireTv.ts` wakes the TV, waits for Fire OS to resume, then sends a YouTube
+watch URL to the installed Fire TV YouTube package when it can handle the intent;
+otherwise it tries the system URL handler. Check the `am start -W` output as well
+as the process exit code: Android can report an activity error on stdout.
+The TV settings test button uses the saved media list and reports when it is empty.
+An accepted intent does not prove the video played; confirm playback on the TV.

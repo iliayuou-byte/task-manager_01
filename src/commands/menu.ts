@@ -415,7 +415,7 @@ const showFireTvSettings = async (ctx: BotContext) => {
     .row()
     .text('🎵 Список видео', `menu:tvmedia:${state.id}`)
     .row()
-    .text('🔌 Проверить / разбудить', `menu:tvtest:${state.id}`)
+    .text('▶️ Проверить видео на ТВ', `menu:tvtest:${state.id}`)
     .row()
     .text(
       enabled ? '⏸ Выключить запуск по расписанию' : '▶️ Включить по расписанию',
@@ -454,16 +454,23 @@ const testFireTv = async (ctx: BotContext) => {
   if (!metadata.fire_tv_host)
     return await panelReply(ctx, 'Сначала укажи локальный IP телевизора.');
   try {
-    await wakeFireTv(metadata.fire_tv_host);
+    const links = metadata.fire_tv_media
+      ? parseFireTvMedia(metadata.fire_tv_media)
+      : [];
+    const selected = await wakeFireTv(metadata.fire_tv_host, links);
     await panelReply(
       ctx,
-      '✅ ADB подключился, телевизору отправлена команда пробуждения.',
+      selected
+        ? `📺 Телевизор включён. Команда запуска видео отправлена: ${selected}\n\nПроверь, появилось ли видео на экране.`
+        : '📺 Телевизор включён. Список видео пуст — добавь ссылку через «🎵 Список видео», затем повтори проверку.',
     );
   } catch (error) {
     const detail =
       error instanceof Error && error.message.includes('ENOENT')
-        ? 'Не найден adb. Установи Android Platform Tools на сервер и добавь adb в PATH.'
-        : 'Не удалось подключиться. Проверь IP, ADB Debugging и подтверждение доступа на экране телевизора.';
+        ? 'Не найден adb на устройстве, где запущен бот. Проверь путь FIRE_TV_ADB_PATH.'
+        : error instanceof Error && error.message.includes('открыть видео')
+          ? 'ADB подключился, но телевизор не открыл ссылку. Проверь, что приложение YouTube установлено, и попробуй другую ссылку.'
+          : 'Не удалось подключиться. Проверь IP, ADB Debugging и подтверждение доступа на экране телевизора.';
     await panelReply(ctx, `❌ ${detail}`);
   }
 };

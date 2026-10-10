@@ -54,12 +54,12 @@ export const parseFireTvMedia = (input: string): string[] => {
   return [...new Set(lines.map(normalizeYoutubeUrl))];
 };
 
-const adb = process.env.FIRE_TV_ADB_PATH?.trim() || 'adb';
+const adbPath = () => process.env.FIRE_TV_ADB_PATH?.trim() || 'adb';
 const endpoint = (host: string) => `${normalizeFireTvHost(host)}:5555`;
 
 const runAdb = async (host: string, args: string[]) => {
   const device = endpoint(host);
-  const connection = await execFile(adb, ['connect', device], {
+  const connection = await execFile(adbPath(), ['connect', device], {
     timeout: 12_000,
     windowsHide: true,
     maxBuffer: 1024 * 1024,
@@ -70,11 +70,36 @@ const runAdb = async (host: string, args: string[]) => {
     )
   )
     throw new Error('ADB не смог подключиться к телевизору.');
-  return execFile(adb, ['-s', device, ...args], {
+  return execFile(adbPath(), ['-s', device, ...args], {
     timeout: 12_000,
     windowsHide: true,
     maxBuffer: 1024 * 1024,
   });
+};
+
+export const assertFireTvActivityStarted = (output: string) => {
+  if (
+    /(?:\bError:|Activity not started|SecurityException|Status:\s*(?:timeout|error))/i.test(
+      output,
+    )
+  )
+    throw new Error('Телевизор не смог открыть видео через ADB.');
+};
+
+const startVideo = async (host: string, url: string, packageName?: string) => {
+  const args = [
+    'shell',
+    'am',
+    'start',
+    '-W',
+    '-a',
+    'android.intent.action.VIEW',
+    ...(packageName ? ['-p', packageName] : []),
+    '-d',
+    url,
+  ];
+  const result = await runAdb(host, args);
+  assertFireTvActivityStarted(`${result.stdout}\n${result.stderr}`);
 };
 
 export const wakeFireTv = async (
@@ -85,15 +110,30 @@ export const wakeFireTv = async (
   const links = media.map(normalizeYoutubeUrl);
   if (!links.length) return undefined;
   const url = links[Math.floor(Math.random() * links.length)];
-  await new Promise((resolve) => setTimeout(resolve, 2500));
-  await runAdb(host, [
-    'shell',
-    'am',
-    'start',
-    '-a',
-    'android.intent.action.VIEW',
-    '-d',
-    url,
-  ]);
+  const id = url.slice(-11);
+  const watchUrl = `https://www.youtube.com/watch?v=${id}`;
+  // Fire OS may still be restoring the foreground app after KEYCODE_WAKEUP.
+  await new Promise((resolve) => setTimeout(resolve, 6000));
+  let youtubeInstalled = false;
+  try {
+    const packages = await runAdb(host, [
+      'shell',
+      'pm',
+      'path',
+      'com.amazon.firetv.youtube',
+    ]);
+    youtubeInstalled = /\bpackage:/.test(packages.stdout);
+  } catch {
+    // Older Fire OS versions may not support this package lookup.
+  }
+  if (youtubeInstalled) {
+    try {
+      await startVideo(host, watchUrl, 'com.amazon.firetv.youtube');
+      return url;
+    } catch {
+      // Some Fire OS versions have the app but do not export its URL handler.
+    }
+  }
+  await startVideo(host, watchUrl);
   return url;
 };
