@@ -237,3 +237,11 @@ without these fields remain valid. Routine blocks occupy planning time but never
 create tasks/calendar entries. Template editing and weekday toggles remain drafts
 until a confirmed save with the original preference fingerprint; Home invalidates
 old callbacks. Deleting a saved template removes its weekday assignments.
+
+`services/routineTable.ts` owns CSV/TSV interchange for one selected routine
+(template identity/week assignments stay in the wizard). Import is bounded to
+64 KiB including streamed downloads, validates UTF-8 and all routine intervals,
+and remains a draft until templateSave. File handling requires an active private,
+owner/chat-bound import screen; recheck screen identity/expiry after download.
+Never log or expose file-fetch errors containing Telegram token URLs. CSV exports
+are explicit durable documents, not UI panels; formula-like names export as text.

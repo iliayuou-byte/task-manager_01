@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { addDays, format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { type Composer, InlineKeyboard } from 'grammy';
+import { type Composer, InlineKeyboard, InputFile } from 'grammy';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { panelNotice, panelReply } from '../services/chatPanel.js';
@@ -16,6 +16,12 @@ import {
   plannerPreferences,
 } from '../services/dayPlanner.js';
 import { queryTasks } from '../services/queryTasks.js';
+import {
+  exportRoutineTable,
+  MAX_ROUTINE_TABLE_BYTES,
+  parseRoutineTable,
+  readRoutineTable,
+} from '../services/routineTable.js';
 import {
   parseRoutineBlocks,
   type RoutineTemplate,
@@ -229,6 +235,19 @@ const showTemplate = async (ctx: BotContext, state: DayState) => {
       ['📅 Дни недели', 'templateDays'],
       ['✅ Сохранить шаблон', 'templateSave'],
       ['🗑 Удалить шаблон', 'templateDelete'],
+      ['📑 Редактор в таблице', 'templateTable'],
+    ],
+  );
+};
+const showTableEditor = async (ctx: BotContext, state: DayState) => {
+  state.step = undefined;
+  return screen(
+    ctx,
+    `📑 ${state.template!.name} · редактор таблицы\n\nСкачай CSV и открой в Numbers, Excel или Google Sheets. В Notion импортируй CSV в таблицу.\n\nКолонки: Начало | Конец | Занятие. Время — текст HH:MM. Можно добавлять, удалять и переставлять строки.\n\nЗатем выбери «Загрузить таблицу» и отправь CSV UTF-8 либо вставь скопированные строки таблицы. Импорт заменит блоки черновика; назначение дней останется. Проверишь результат и сохранишь отдельно.`,
+    state,
+    [
+      ['📥 Скачать CSV', 'templateExport'],
+      ['📤 Загрузить таблицу', 'templateImport'],
     ],
   );
 };
@@ -292,6 +311,10 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
     if (state.busy) return;
     state.busy = true;
     try {
+      if (state.step === 'templateTable') {
+        state.template!.blocks = parseRoutineTable(text);
+        return await showTemplate(ctx, state);
+      }
       if (state.step === 'templateName') {
         if (!text || text.length > 80)
           throw new Error('Название: от 1 до 80 символов.');
@@ -380,6 +403,62 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
       state.busy = false;
     }
   });
+  composer.on('message:document', async (ctx, next) => {
+    if (ctx.chat.type !== 'private') return next();
+    const state = states.get(key(ctx));
+    if (
+      !state ||
+      state.expires < Date.now() ||
+      state.step !== 'templateTable' ||
+      !state.template
+    )
+      return next();
+    if (state.busy) return;
+    const document = ctx.message.document;
+    if (
+      !/\.(csv|tsv)$/i.test(document.file_name || '') ||
+      (document.file_size || 0) > MAX_ROUTINE_TABLE_BYTES
+    )
+      return panelReply(
+        ctx,
+        'Нужен CSV UTF-8 или TSV до 64 КБ. XLSX и ZIP экспортируй в CSV.',
+        { reply_markup: keyboard(state, []) },
+      );
+    state.busy = true;
+    try {
+      const file = await ctx.api.getFile(document.file_id);
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      if (!file.file_path || !token) throw new Error('download');
+      const response = await fetch(
+        `https://api.telegram.org/file/bot${token}/${file.file_path}`,
+        { signal: AbortSignal.timeout(15_000), redirect: 'error' },
+      );
+      const text = await readRoutineTable(response);
+      if (
+        states.get(key(ctx)) !== state ||
+        state.expires < Date.now() ||
+        state.step !== 'templateTable'
+      )
+        return;
+      state.template.blocks = parseRoutineTable(text);
+      return await showTemplate(ctx, state);
+    } catch {
+      if (
+        states.get(key(ctx)) !== state ||
+        state.expires < Date.now() ||
+        state.step !== 'templateTable'
+      )
+        return;
+      // Never expose download errors: Telegram file URLs contain the bot token.
+      return await panelReply(
+        ctx,
+        'Не удалось импортировать таблицу. Проверь CSV UTF-8, колонки Начало / Конец / Занятие, время HH:MM и пересечения. Можно вставить строки текстом — тогда покажу точную ошибку.',
+        { reply_markup: keyboard(state, []) },
+      );
+    } finally {
+      state.busy = false;
+    }
+  });
   composer.on('callback_query:data', async (ctx, next) => {
     if (!ctx.callbackQuery.data.startsWith('day:')) {
       states.delete(key(ctx));
@@ -428,6 +507,29 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
         return await showTemplate(ctx, draft);
       }
       if (action.startsWith('template') && state.template) {
+        if (action === 'templateTable')
+          return await showTableEditor(ctx, state);
+        if (action === 'templateExport') {
+          await ctx.replyWithDocument(
+            new InputFile(
+              Buffer.from(exportRoutineTable(state.template.blocks)),
+              `routine-${state.template.id}.csv`,
+            ),
+            {
+              caption: `${state.template.name} · редактируй колонки Начало, Конец, Занятие. Затем загрузи таблицу в этой карточке.`,
+            },
+          );
+          return await showTableEditor(ctx, state);
+        }
+        if (action === 'templateImport') {
+          state.step = 'templateTable';
+          return await screen(
+            ctx,
+            'Отправь CSV UTF-8 до 64 КБ или вставь скопированные строки таблицы (Начало, Конец, Занятие). XLSX и ZIP сначала экспортируй в CSV.\n\nСохранение — после проверки, отдельной кнопкой.',
+            state,
+            [],
+          );
+        }
         if (action === 'templateName' || action === 'templateBlocks') {
           state.step = action;
           return await screen(

@@ -86,7 +86,9 @@ const fixture = (user: number) => {
               chat: { id: user, type: 'private' },
               text: 'test',
             }
-          : true,
+          : method === 'getFile'
+            ? { file_path: 'documents/table.csv' }
+            : true,
     } as Awaited<ReturnType<typeof _prev>>;
   });
   const session = {};
@@ -129,6 +131,23 @@ const fixture = (user: number) => {
               },
             ]
           : undefined,
+      },
+    });
+  };
+  const document = async (name = 'routine.csv') => {
+    await bot.handleUpdate({
+      update_id: update++,
+      message: {
+        message_id: message.message_id,
+        date: message.date,
+        chat: message.chat,
+        from,
+        document: {
+          file_id: 'table',
+          file_unique_id: 'table',
+          file_name: name,
+          file_size: 100,
+        },
       },
     });
   };
@@ -178,7 +197,17 @@ const fixture = (user: number) => {
     if (!value) throw new Error(`Button missing: ${label}`);
     await text(value);
   };
-  return { bot, text, click, button, labels, tap, calls, data: () => data };
+  return {
+    bot,
+    text,
+    document,
+    click,
+    button,
+    labels,
+    tap,
+    calls,
+    data: () => data,
+  };
 };
 
 test('reminder buttons preserve disabled schedule and restore it', async () => {
@@ -1117,4 +1146,97 @@ test('template confirmation is invalidated by home and rejects concurrent prefer
   f.data().metadata.planner_preferences = concurrent;
   await f.tap('Сохранить шаблон');
   expect(f.data().metadata.planner_preferences).toBe(concurrent);
+});
+
+test('external table editor exports CSV and previews pasted changes before saving', async () => {
+  const f = fixture(612);
+  await f.text(MENU.plan);
+  await f.tap('Планировка');
+  await f.tap('Шаблоны');
+  await f.tap('Выходной');
+  await f.tap('Редактор в таблице');
+  await f.tap('Скачать CSV');
+  expect(f.calls.some((call) => call.method === 'sendDocument')).toBe(true);
+  await f.tap('Загрузить таблицу');
+  await f.text('Начало\tКонец\tЗанятие\n08:00\t08:30\tЕда\n23:00\t07:00\tСон');
+  expect(f.data().metadata.planner_preferences).toBeUndefined();
+  await f.tap('Сохранить шаблон');
+  const saved = JSON.parse(f.data().metadata.planner_preferences!);
+  expect(saved.templates[0].blocks[0].name).toBe('Еда');
+  expect(saved.templates[0].blocks).toHaveLength(2);
+});
+
+test('invalid table input keeps the draft editable and home cancels import confirmation', async () => {
+  const f = fixture(613);
+  await f.text(MENU.plan);
+  await f.tap('Планировка');
+  await f.tap('Шаблоны');
+  await f.tap('Выходной');
+  await f.tap('Редактор в таблице');
+  await f.tap('Загрузить таблицу');
+  await f.text('Начало,Конец,Занятие\n08:00,09:00,Еда\n08:30,10:00,Работа');
+  expect(
+    f.calls.some((call) => String(call.text).includes('пересекаются')),
+  ).toBe(true);
+  await f.text('08:00,08:30,Завтрак');
+  const save = f.button('Сохранить шаблон');
+  await f.tap('Меню');
+  await f.click(save);
+  expect(f.data().metadata.planner_preferences).toBeUndefined();
+});
+
+test('CSV documents produce drafts and cancellation suppresses late downloaded results', async () => {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = '123:test';
+  try {
+    const f = fixture(614);
+    const openImport = async () => {
+      await f.text(MENU.plan);
+      await f.tap('Планировка');
+      await f.tap('Шаблоны');
+      await f.tap('Выходной');
+      await f.tap('Редактор в таблице');
+      await f.tap('Загрузить таблицу');
+    };
+    const download = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Начало,Конец,Занятие\n08:00,08:30,Завтрак'),
+    );
+    spies.push(download);
+    await openImport();
+    await f.document();
+    expect(f.data().metadata.planner_preferences).toBeUndefined();
+    await f.tap('Сохранить шаблон');
+    expect(
+      JSON.parse(f.data().metadata.planner_preferences!).templates[0].blocks[0]
+        .name,
+    ).toBe('Завтрак');
+    const saved = f.data().metadata.planner_preferences;
+    await openImport();
+    let release!: (response: Response) => void;
+    let began!: () => void;
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    download.mockImplementation(
+      Object.assign(
+        async () => {
+          began();
+          return await new Promise<Response>((resolve) => {
+            release = resolve;
+          });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const pending = f.document();
+    await started;
+    await f.text(MENU.home);
+    release(new Response('08:00,08:30,Поздняя правка'));
+    await pending;
+    expect(f.data().metadata.planner_preferences).toBe(saved);
+    expect(f.labels()).toContain(MENU.all);
+  } finally {
+    if (token === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = token;
+  }
 });
