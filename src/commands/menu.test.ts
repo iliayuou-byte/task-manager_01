@@ -221,20 +221,36 @@ test('morning list settings edit the next weekday checklist and can be disabled'
   expect(f.data().metadata.morning_enabled).toBe('false');
 });
 
-test('TV settings show the current links and refresh after replacement', async () => {
+test('TV music menu adds links and deletes the selected numbered row', async () => {
   const f = fixture(592);
   const latestText = () =>
     String([...f.calls].reverse().find((call) => call.text)?.text);
   await f.click('menu:tv');
-  expect(latestText()).toContain('🎵 Музыка (0):\nСписок пуст');
+  expect(latestText()).toContain('Видео в списке: 0');
   await f.click(f.button('Изменить музыку'));
+  await f.click(f.button('Актуальный список'));
+  expect(latestText()).toContain('Пока пусто.');
+  await f.click(f.button('Добавить'));
   await f.text('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=35');
   expect(f.data().metadata.fire_tv_media).toBe('https://youtu.be/dQw4w9WgXcQ');
   expect(latestText()).toContain('1. https://youtu.be/dQw4w9WgXcQ');
-  await f.click(f.button('Изменить музыку'));
-  await f.text('очистить');
+  await f.click(f.button('Добавить'));
+  await f.text('https://youtu.be/jNQXAC9IVRw');
+  expect(f.data().metadata.fire_tv_media?.split('\n')).toEqual([
+    'https://youtu.be/dQw4w9WgXcQ',
+    'https://youtu.be/jNQXAC9IVRw',
+  ]);
+  await f.click(f.button('Удалить'));
+  const first = f.button('1');
+  await f.click(first);
+  expect(f.data().metadata.fire_tv_media).toBe('https://youtu.be/jNQXAC9IVRw');
+  expect(latestText()).toContain('1. https://youtu.be/jNQXAC9IVRw');
+  await f.click(first);
+  expect(f.data().metadata.fire_tv_media).toBe('https://youtu.be/jNQXAC9IVRw');
+  await f.click(f.button('Удалить'));
+  await f.click(f.button('1'));
   expect(f.data().metadata.fire_tv_media).toBe('');
-  expect(latestText()).toContain('🎵 Музыка (0):\nСписок пуст');
+  expect(latestText()).toContain('Пока пусто.');
 });
 
 test('morning checklist button updates progress and rejects an expired list', async () => {
