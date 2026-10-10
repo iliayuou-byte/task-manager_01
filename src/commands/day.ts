@@ -17,9 +17,9 @@ import {
 } from '../services/dayPlanner.js';
 import { queryTasks } from '../services/queryTasks.js';
 import {
-  exportRoutineTable,
+  exportRoutineWorkbook,
   MAX_ROUTINE_TABLE_BYTES,
-  parseRoutineTable,
+  parseRoutineWorkbook,
   readRoutineTable,
 } from '../services/routineTable.js';
 import {
@@ -51,6 +51,10 @@ interface DayState {
   original?: string;
   template?: RoutineTemplate;
   assignments?: Record<string, string>;
+  tableData?: {
+    templates: RoutineTemplate[];
+    weekTemplates: Record<string, string>;
+  };
 }
 const states = new Map<string, DayState>();
 const key = (ctx: BotContext) => `${ctx.from!.id}:${ctx.chat!.id}`;
@@ -243,7 +247,7 @@ const showTableEditor = async (ctx: BotContext, state: DayState) => {
   state.step = undefined;
   return screen(
     ctx,
-    `📑 ${state.template!.name} · редактор таблицы\n\nДля Excel выбери CSV с точкой с запятой (;). Если колонки не разделились, импортируй файл и укажи разделитель вручную. Для Notion и Google Sheets есть CSV с запятыми (,).\n\nКолонки: Начало | Конец | Занятие. Время — текст HH:MM. Можно добавлять, удалять и переставлять строки.\n\nЗатем выбери «Загрузить таблицу» и отправь CSV UTF-8 либо вставь скопированные строки таблицы. Импорт заменит блоки черновика; назначение дней останется. Проверишь результат и сохранишь отдельно.`,
+    `📑 Все шаблоны · редактор таблицы\n\nДля Excel скачай CSV с точкой с запятой (;). Для Notion или Google Sheets — CSV с запятыми (,).\n\nКолонки: Шаблон | Дни | Начало | Конец | Занятие. Все шаблоны собраны в одном файле. У каждой строки шаблона повторяются одинаковые дни: Пн|Вт|Ср|Чт|Пт|Сб|Вс.\n\nДобавляй и удаляй строки, меняй время и названия. Удали все строки шаблона, чтобы убрать его. Затем загрузи общий CSV или вставь скопированную таблицу; изменения применятся после проверки и нажатия кнопки сохранения.`,
     state,
     [
       ['📥 Скачать CSV (Excel ;)', 'templateExport'],
@@ -294,6 +298,54 @@ const confirm = async (ctx: BotContext, state: DayState) => {
     ],
   );
 };
+const previewRoutineWorkbook = async (
+  ctx: BotContext,
+  state: DayState,
+  text: string,
+) => {
+  const imported = parseRoutineWorkbook(text);
+  const current = await queryTasks();
+  const existing = availableTemplates(plannerPreferences(current.metadata));
+  const templates = imported.templates.map((item) => ({
+    id:
+      existing.find(
+        (saved) =>
+          saved.name.toLocaleLowerCase('ru') ===
+          item.name.toLocaleLowerCase('ru'),
+      )?.id || randomUUID(),
+    name: item.name,
+    blocks: item.blocks,
+  }));
+  const weekTemplates: Record<string, string> = {};
+  for (const item of imported.templates) {
+    const id = templates.find((template) => template.name === item.name)!.id;
+    for (const day of item.days) {
+      if (weekTemplates[String(day)])
+        throw new Error(`${WEEKDAYS[day - 1]} назначен сразу двум шаблонам.`);
+      weekTemplates[String(day)] = id;
+    }
+  }
+  state.tableData = { templates, weekTemplates };
+  state.step = undefined;
+  return screen(
+    ctx,
+    `📑 Проверь все шаблоны\n\n${templates
+      .map((template) => {
+        const days =
+          Object.entries(weekTemplates)
+            .filter(([, id]) => id === template.id)
+            .map(([day]) => WEEKDAYS[Number(day) - 1])
+            .join(', ') || 'без назначения';
+        return `• ${template.name}: ${template.blocks.length} блоков · ${days}`;
+      })
+      .join('\n')}\n\nСохранение заменит список шаблонов и их назначения.`,
+    state,
+    [
+      ['✅ Сохранить все шаблоны', 'templateWorkbookSave'],
+      ['📑 Назад к таблице', 'templateTable'],
+    ],
+  );
+};
 export const registerDayPlanner = (composer: Composer<BotContext>) => {
   composer.command('day', openDay);
   composer.on('message:text', async (ctx, next) => {
@@ -312,10 +364,8 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
     if (state.busy) return;
     state.busy = true;
     try {
-      if (state.step === 'templateTable') {
-        state.template!.blocks = parseRoutineTable(text);
-        return await showTemplate(ctx, state);
-      }
+      if (state.step === 'templateTable')
+        return await previewRoutineWorkbook(ctx, state, text);
       if (state.step === 'templateName') {
         if (!text || text.length > 80)
           throw new Error('Название: от 1 до 80 символов.');
@@ -441,8 +491,7 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
         state.step !== 'templateTable'
       )
         return;
-      state.template.blocks = parseRoutineTable(text);
-      return await showTemplate(ctx, state);
+      return await previewRoutineWorkbook(ctx, state, text);
     } catch {
       if (
         states.get(key(ctx)) !== state ||
@@ -508,30 +557,57 @@ export const registerDayPlanner = (composer: Composer<BotContext>) => {
         return await showTemplate(ctx, draft);
       }
       if (action.startsWith('template') && state.template) {
+        if (action === 'templateWorkbookSave') {
+          if (!state.tableData)
+            throw new Error('Загрузи и проверь таблицу заново.');
+          const latest = await queryTasks();
+          if (latest.metadata.planner_preferences !== state.original)
+            throw new Error('Шаблоны изменились. Открой редактор заново.');
+          const preferences = plannerPreferences(latest.metadata);
+          latest.metadata.planner_preferences = JSON.stringify({
+            ...preferences,
+            templates: state.tableData.templates,
+            weekTemplates: state.tableData.weekTemplates,
+          });
+          if (!(await saveTasks(latest.taskData, latest.metadata)))
+            throw new Error('Не удалось сохранить шаблоны.');
+          return await showTemplates(ctx);
+        }
         if (action === 'templateTable')
           return await showTableEditor(ctx, state);
         if (action === 'templateExport' || action === 'templateExportComma') {
           await ctx.replyWithDocument(
             new InputFile(
               Buffer.from(
-                exportRoutineTable(
-                  state.template.blocks,
+                exportRoutineWorkbook(
+                  {
+                    templates: availableTemplates(
+                      plannerPreferences((await queryTasks()).metadata),
+                    ).map((template) => ({
+                      name: template.name,
+                      blocks: template.blocks,
+                      days: Object.entries(state.assignments || {})
+                        .filter(([, id]) => id === template.id)
+                        .map(([day]) => Number(day)),
+                    })),
+                  },
                   action === 'templateExport' ? ';' : ',',
                 ),
               ),
               `routine-${state.template.id}-${action === 'templateExport' ? 'excel' : 'comma'}.csv`,
             ),
             {
-              caption: `${state.template.name} · разделитель: ${action === 'templateExport' ? 'точка с запятой (;)' : 'запятая (,)'}. Редактируй колонки Начало, Конец, Занятие. Затем загрузи таблицу в этой карточке.`,
+              caption: `${state.template.name} · разделитель: ${action === 'templateExport' ? 'точка с запятой (;)' : 'запятая (,)'}. В CSV собраны все шаблоны. Редактируй Шаблон, Дни, Начало, Конец, Занятие и загрузи общий файл через редактор режима дня.`,
             },
           );
           return await showTableEditor(ctx, state);
         }
         if (action === 'templateImport') {
           state.step = 'templateTable';
+          state.tableData = undefined;
           return await screen(
             ctx,
-            'Отправь CSV UTF-8 до 64 КБ или вставь скопированные строки таблицы (Начало, Конец, Занятие). XLSX и ZIP сначала экспортируй в CSV.\n\nСохранение — после проверки, отдельной кнопкой.',
+            'Отправь общий CSV UTF-8 до 64 КБ с колонками Шаблон, Дни, Начало, Конец, Занятие или вставь скопированную таблицу. Импорт обновит все шаблоны; удали строки шаблона, чтобы убрать его. XLSX и ZIP сначала экспортируй в CSV. Сначала покажу проверку.',
             state,
             [],
           );

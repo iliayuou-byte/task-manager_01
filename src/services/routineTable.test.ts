@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test';
 import {
   exportRoutineTable,
+  exportRoutineWorkbook,
   MAX_ROUTINE_TABLE_BYTES,
   parseRoutineTable,
+  parseRoutineWorkbook,
   readRoutineTable,
 } from './routineTable.js';
 
@@ -70,9 +72,60 @@ test('download validates UTF-8, HTTP status and actual streamed size', async () 
 test('Excel semicolon export round trips separator characters without affecting comma export', () => {
   const blocks = [{ start: '08:00', end: '08:30', name: 'Кофе; чай, завтрак' }];
   const excel = exportRoutineTable(blocks, ';');
-  expect(excel.split('\r\n')[0]).toBe('\uFEFF"Начало";"Конец";"Занятие"');
+  expect(excel.split('\r\n')[0]).toBe(
+    '\uFEFF"Шаблон";"Дни";"Начало";"Конец";"Занятие"',
+  );
   expect(parseRoutineTable(excel)).toEqual(blocks);
   expect(exportRoutineTable(blocks).split('\r\n')[0]).toBe(
-    '\uFEFF"Начало","Конец","Занятие"',
+    '\uFEFF"Шаблон","Дни","Начало","Конец","Занятие"',
   );
+});
+
+test('one workbook exports all routines with weekday assignments and imports them as separate editable templates', () => {
+  const source = exportRoutineWorkbook(
+    {
+      templates: [
+        {
+          name: 'Учебный день',
+          days: [1, 3],
+          blocks: [
+            { start: '08:00', end: '09:00', name: 'Учёба' },
+            { start: '22:00', end: '07:00', name: 'Сон' },
+          ],
+        },
+        {
+          name: 'Выходной',
+          days: [6, 7],
+          blocks: [{ start: '09:00', end: '10:00', name: 'Завтрак' }],
+        },
+      ],
+    },
+    ';',
+  );
+  const parsed = parseRoutineWorkbook(source);
+  expect(parsed.templates).toEqual([
+    {
+      name: 'Учебный день',
+      days: [1, 3],
+      blocks: [
+        { start: '08:00', end: '09:00', name: 'Учёба' },
+        { start: '22:00', end: '07:00', name: 'Сон' },
+      ],
+    },
+    {
+      name: 'Выходной',
+      days: [6, 7],
+      blocks: [{ start: '09:00', end: '10:00', name: 'Завтрак' }],
+    },
+  ]);
+  expect(() =>
+    parseRoutineWorkbook(
+      'Шаблон,Дни,Начало,Конец,Занятие\nУчёба,Пн|Вт,08:00,09:00,Урок\nРабота,Вт,09:00,10:00,Офис',
+    ),
+  ).toThrow('назначен сразу двум');
+  expect(() =>
+    parseRoutineWorkbook(
+      'Шаблон,Дни,Начало,Конец,Занятие\nУчёба,Пн,08:00,09:00,Урок\nУчёба,Вт,10:00,11:00,Другое',
+    ),
+  ).toThrow('должны совпадать');
 });

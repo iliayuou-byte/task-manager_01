@@ -1158,9 +1158,11 @@ test('external table editor exports CSV and previews pasted changes before savin
   await f.tap('Скачать CSV');
   expect(f.calls.some((call) => call.method === 'sendDocument')).toBe(true);
   await f.tap('Загрузить таблицу');
-  await f.text('Начало\tКонец\tЗанятие\n08:00\t08:30\tЕда\n23:00\t07:00\tСон');
+  await f.text(
+    'Шаблон\tДни\tНачало\tКонец\tЗанятие\nВыходной\tСб|Вс\t08:00\t08:30\tЕда\nВыходной\tСб|Вс\t23:00\t07:00\tСон',
+  );
   expect(f.data().metadata.planner_preferences).toBeUndefined();
-  await f.tap('Сохранить шаблон');
+  await f.tap('Сохранить все шаблоны');
   const saved = JSON.parse(f.data().metadata.planner_preferences!);
   expect(saved.templates[0].blocks[0].name).toBe('Еда');
   expect(saved.templates[0].blocks).toHaveLength(2);
@@ -1174,12 +1176,16 @@ test('invalid table input keeps the draft editable and home cancels import confi
   await f.tap('Выходной');
   await f.tap('Редактор в таблице');
   await f.tap('Загрузить таблицу');
-  await f.text('Начало,Конец,Занятие\n08:00,09:00,Еда\n08:30,10:00,Работа');
+  await f.text(
+    'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб,08:00,09:00,Еда\nВыходной,Сб,08:30,10:00,Работа',
+  );
   expect(
     f.calls.some((call) => String(call.text).includes('пересекаются')),
   ).toBe(true);
-  await f.text('08:00,08:30,Завтрак');
-  const save = f.button('Сохранить шаблон');
+  await f.text(
+    'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб,08:00,08:30,Завтрак',
+  );
+  const save = f.button('Сохранить все шаблоны');
   await f.tap('Меню');
   await f.click(save);
   expect(f.data().metadata.planner_preferences).toBeUndefined();
@@ -1199,13 +1205,15 @@ test('CSV documents produce drafts and cancellation suppresses late downloaded r
       await f.tap('Загрузить таблицу');
     };
     const download = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Начало,Конец,Занятие\n08:00,08:30,Завтрак'),
+      new Response(
+        'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб|Вс,08:00,08:30,Завтрак',
+      ),
     );
     spies.push(download);
     await openImport();
     await f.document();
     expect(f.data().metadata.planner_preferences).toBeUndefined();
-    await f.tap('Сохранить шаблон');
+    await f.tap('Сохранить все шаблоны');
     expect(
       JSON.parse(f.data().metadata.planner_preferences!).templates[0].blocks[0]
         .name,
@@ -1231,7 +1239,11 @@ test('CSV documents produce drafts and cancellation suppresses late downloaded r
     const pending = f.document();
     await started;
     await f.text(MENU.home);
-    release(new Response('08:00,08:30,Поздняя правка'));
+    release(
+      new Response(
+        'Шаблон,Дни,Начало,Конец,Занятие\nВыходной,Сб|Вс,08:00,08:30,Поздняя правка',
+      ),
+    );
     await pending;
     expect(f.data().metadata.planner_preferences).toBe(saved);
     expect(f.labels()).toContain(MENU.all);

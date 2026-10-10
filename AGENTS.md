@@ -245,3 +245,10 @@ and remains a draft until templateSave. File handling requires an active private
 owner/chat-bound import screen; recheck screen identity/expiry after download.
 Never log or expose file-fetch errors containing Telegram token URLs. CSV exports
 are explicit durable documents, not UI panels; formula-like names export as text.
+
+Routine CSV export now includes every starter and saved template plus ISO weekday
+assignments in columns Template, Days, Start, End, Activity. CSV import groups
+rows by exact template name, validates consistent weekday values, rejects duplicate
+day ownership and replaces the full template set only after explicit confirmation.
+A legacy single-template CSV remains accepted. On import confirmation preserve
+all unrelated planner preferences and the task data.
