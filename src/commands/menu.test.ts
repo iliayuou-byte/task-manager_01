@@ -223,19 +223,19 @@ test('morning list settings edit the next weekday checklist and can be disabled'
 
 test('TV music screen shows the saved links and refreshes after replacement', async () => {
   const f = fixture(592);
+  const latestText = () =>
+    String([...f.calls].reverse().find((call) => call.text)?.text);
   await f.click('menu:tv');
   await f.click(f.button('Текущая музыка'));
-  expect(f.calls[f.calls.length - 1]?.text).toContain('Список пока пуст');
+  expect(latestText()).toContain('Список пока пуст');
   await f.click(f.button('Изменить список'));
   await f.text('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=35');
   expect(f.data().metadata.fire_tv_media).toBe('https://youtu.be/dQw4w9WgXcQ');
-  expect(f.calls[f.calls.length - 1]?.text).toContain(
-    '1. https://youtu.be/dQw4w9WgXcQ',
-  );
+  expect(latestText()).toContain('1. https://youtu.be/dQw4w9WgXcQ');
   await f.click(f.button('Изменить список'));
   await f.text('очистить');
   expect(f.data().metadata.fire_tv_media).toBe('');
-  expect(f.calls[f.calls.length - 1]?.text).toContain('Список пока пуст');
+  expect(latestText()).toContain('Список пока пуст');
 });
 
 test('morning checklist button updates progress and rejects an expired list', async () => {
