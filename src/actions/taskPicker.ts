@@ -2,11 +2,14 @@ import { type Composer, InlineKeyboard } from 'grammy';
 import type { Task, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
+import { numberedTasks, rememberTaskNumbers } from '../services/taskNumbers.js';
 import { markTaskCompleted, promptCalendarAction } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 
-const TASKS_PER_PAGE = 8;
+const TASKS_PER_PAGE = 6;
 const MAX_NAME_LENGTH = 28;
 
 type PickerCommand = 'complete' | 'remove' | 'edit';
@@ -98,7 +101,7 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
 
       // Cancel
       if (action === 'cancel') {
-        await ctx.editMessageText(`❌ ${capitalize(command)} cancelled.`);
+        await panelReply(ctx, `❌ ${capitalize(command)} cancelled.`);
         return;
       }
 
@@ -106,6 +109,8 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
       if (action.startsWith('page_')) {
         const page = parseInt(action.split('_')[1], 10);
         const { taskData } = await queryTasks();
+        if (command === 'complete')
+          return await showCompletePicker(ctx, taskData.uncompleted, page);
 
         let keyboard: InlineKeyboard;
         if (command === 'remove') {
@@ -119,9 +124,7 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
           );
         }
 
-        await ctx.editMessageReplyMarkup({
-          reply_markup: keyboard,
-        });
+        await panelReply(ctx, 'Выбери дело:', { reply_markup: keyboard });
         return;
       }
 
@@ -134,7 +137,8 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
         taskType === 'u' ? taskData.uncompleted : taskData.completed;
 
       if (idx < 0 || idx >= tasks.length) {
-        await ctx.editMessageText(
+        await panelReply(
+          ctx,
           '⚠️ Task list has changed. Please try the command again.',
         );
         return;
@@ -143,11 +147,17 @@ export const registerTaskPickerAction = (composer: Composer<BotContext>) => {
       const task = tasks[idx];
 
       if (command === 'complete') {
-        await handleComplete(ctx, taskData, metadata, task);
+        await handleComplete(
+          ctx,
+          taskData,
+          metadata,
+          task,
+          Math.floor(idx / TASKS_PER_PAGE),
+        );
       } else if (command === 'remove') {
         await handleRemove(ctx, taskData, metadata, taskType, idx, task);
       } else if (command === 'edit') {
-        await ctx.editMessageText(`✏️ Editing: ${task.name}`);
+        await panelReply(ctx, `✏️ Editing: ${task.name}`);
         await enterEditScene(ctx, idx);
       }
     },
@@ -161,10 +171,44 @@ const handleComplete = async (
   taskData: TaskData,
   metadata: { timezone?: string },
   task: Task,
+  page: number,
 ) => {
   markTaskCompleted(task, metadata.timezone);
-  await saveTasks(taskData, metadata);
-  await ctx.editMessageText(`✅ Completed: ${task.name}`);
+  taskData.uncompleted = taskData.uncompleted.filter(
+    (candidate) => candidate !== task,
+  );
+  taskData.completed.unshift(task);
+  if (!(await saveTasks(taskData, metadata)))
+    throw new Error('Storage did not confirm save');
+  await showCompletePicker(ctx, taskData.uncompleted, page);
+  await panelNotice(ctx, `✅ Выполнено: ${task.name}`, {
+    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+  });
+};
+
+export const showCompletePicker = async (
+  ctx: BotContext,
+  tasks: Task[],
+  page = 0,
+) => {
+  const lastPage = Math.max(0, Math.ceil(tasks.length / TASKS_PER_PAGE) - 1);
+  rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, numberedTasks(tasks));
+  const messages = splitMessages([
+    `📚 Незавершённые дела · ${tasks.length}`,
+    '',
+    ...matrixLines(tasks),
+    '',
+    tasks.length ? 'Выбери дело, которое выполнено:' : '✅ Все дела выполнены.',
+  ]);
+  for (const message of messages.slice(0, -1)) await panelReply(ctx, message);
+  return panelReply(ctx, messages[messages.length - 1], {
+    reply_markup: generateTaskPickerKeyboard(
+      tasks,
+      'complete',
+      'u',
+      Math.min(page, lastPage),
+    ),
+  });
 };
 
 const handleRemove = async (
@@ -178,15 +222,21 @@ const handleRemove = async (
   const calendarEventId = task.calendarEventId;
   const list = taskType === 'u' ? 'uncompleted' : 'completed';
   taskData[list].splice(idx, 1);
-  await saveTasks(taskData, metadata);
+  if (!(await saveTasks(taskData, metadata)))
+    throw new Error('Storage did not confirm save');
 
-  await ctx.editMessageText(`🗑️ Removed: ${task.name}`);
+  const { returnToTaskList } = await import('../commands/menu.js');
+  await returnToTaskList(ctx);
+  await panelNotice(ctx, `🗑️ Удалено: ${task.name}`, {
+    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+  });
 
   if (calendarEventId) {
     await promptCalendarAction(
       ctx,
       'Remove corresponding Google Calendar Event?',
       [{ type: 'remove', taskName: task.name, calendarEventId }],
+      true,
     );
   }
 };

@@ -3,6 +3,7 @@ import { Command } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { TaskTypeToOp } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import {
@@ -16,10 +17,11 @@ import {
   NO_TASK_MESSAGE,
   TASK_NOT_FOUND_MESSAGE,
 } from '../views/generalView.js';
+import { removeByNumbers } from './removeSelected.js';
 
 export const removeCommand = async (ctx: BotContext) => {
   if (!ctx.message || !('text' in ctx.message)) {
-    return ctx.reply('❌ Please provide a task name to remove');
+    return panelReply(ctx, '❌ Please provide a task name to remove');
   }
 
   try {
@@ -27,11 +29,14 @@ export const removeCommand = async (ctx: BotContext) => {
     const text = ctx.message.text!;
     const arg = extractArg(text, Command.REMOVE);
 
+    if (/^\d+(?:[\s,]+\d+)*$/.test(arg.trim()))
+      return await removeByNumbers(ctx, arg.trim());
+
     if (!arg) {
       const { taskData } = await queryTasks();
       const total = taskData.uncompleted.length + taskData.completed.length;
-      if (total === 0) return ctx.reply(NO_TASK_MESSAGE);
-      return ctx.reply('Select a task to remove:', {
+      if (total === 0) return panelReply(ctx, NO_TASK_MESSAGE);
+      return panelReply(ctx, 'Select a task to remove:', {
         reply_markup: generateRemovePickerKeyboard(taskData, 0),
       });
     }
@@ -43,7 +48,7 @@ export const removeCommand = async (ctx: BotContext) => {
     if (taskIdx === -1) {
       taskIdx = findTaskIdxByName(taskData.completed, arg);
       if (taskIdx === -1) {
-        return ctx.reply(TASK_NOT_FOUND_MESSAGE);
+        return panelReply(ctx, TASK_NOT_FOUND_MESSAGE);
       }
       taskTypeToRemove = 'completed';
     } else {
@@ -65,9 +70,13 @@ export const removeCommand = async (ctx: BotContext) => {
 
     // Then remove from task table
     taskData[taskTypeToRemove].splice(taskIdx, 1);
-    await saveTasks(taskData, metadata);
+    if (!(await saveTasks(taskData, metadata)))
+      throw new Error('Storage did not confirm save');
 
-    await ctx.reply(
+    const { returnToTaskList } = await import('./menu.js');
+    await returnToTaskList(ctx);
+    await panelNotice(
+      ctx,
       formatOperatedTaskStr(taskToRemove, {
         command: Command.REMOVE,
         prefix: '🗑️ ',
@@ -80,6 +89,7 @@ export const removeCommand = async (ctx: BotContext) => {
         ctx,
         'Remove corresponding Google Calendar Event?',
         [{ type: 'remove', taskName: taskToRemove.name, calendarEventId }],
+        true,
       );
     }
   } catch (error) {

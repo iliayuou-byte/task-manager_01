@@ -25,6 +25,9 @@ export const TABLE_COLUMNS: ReadonlyArray<{
   { key: 'calendarEventId', header: 'CalendarEventId' },
   { key: 'log', header: 'Log' },
   { key: 'recurrenceRule', header: 'RecurrenceRule' },
+  { key: 'important', header: 'Important' },
+  { key: 'urgent', header: 'Urgent' },
+  { key: 'priorityLocked', header: 'PriorityLocked' },
 ] as const;
 
 export const getInitialContent = (date: Date) => `---
@@ -44,6 +47,14 @@ export enum Command {
   SETTIMEZONE = 'settimezone',
   MYTIMEZONE = 'mytimezone',
   TODAY = 'today',
+  NOW = 'now',
+  START = 'start',
+  MENU = 'menu',
+  BRAIN = 'brain',
+  RETRY = 'retry',
+  TALK = 'talk',
+  QUADRANT = 'quadrant',
+  REMINDERS = 'reminders',
   LIST = 'list',
   ADD = 'add',
   COMPLETE = 'complete',
@@ -73,6 +84,32 @@ export const COMMANDS: Record<Command, CommandType> = {
   [Command.MYTIMEZONE]: {
     desc: 'show your current timezone',
     category: 'config',
+  },
+  [Command.QUADRANT]: {
+    desc: 'set quadrant: /quadrant 1 task name',
+    category: 'task-operation',
+  },
+  [Command.REMINDERS]: {
+    desc: 'reminders: /reminders 09:00 19:00 or off',
+    category: 'config',
+  },
+  [Command.START]: { desc: 'open the main menu', category: 'info' },
+  [Command.MENU]: { desc: 'open the main menu', category: 'info' },
+  [Command.TALK]: {
+    desc: 'discuss tasks with your assistant',
+    category: 'info',
+  },
+  [Command.RETRY]: {
+    desc: 'retry a saved task input',
+    category: 'task-operation',
+  },
+  [Command.BRAIN]: {
+    desc: 'turn a brain dump into tasks for review',
+    category: 'task-operation',
+  },
+  [Command.NOW]: {
+    desc: 'choose the next task (optional: minutes available)',
+    category: 'info',
   },
   [Command.TODAY]: {
     desc: "show today's tasks",

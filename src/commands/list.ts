@@ -1,13 +1,11 @@
 import { Command } from '../core/config.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
-import {
-  extractArg,
-  formatTaskListStr,
-  logAndReplyError,
-  parseTags,
-} from '../utils/index.js';
+import { rememberTaskNumbers } from '../services/taskNumbers.js';
+import { extractArg, logAndReplyError, parseTags } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import { NO_TASK_MESSAGE } from '../views/generalView.js';
 
 export const listCommand = async (ctx: BotContext) => {
@@ -20,22 +18,21 @@ export const listCommand = async (ctx: BotContext) => {
 
     let tasksToDisplay: Task[];
     let title: string;
-    let showStatus = false;
 
     if (!arg) {
       // Default: show pending tasks
       tasksToDisplay = taskData.uncompleted;
-      title = '📋 *Pending Tasks*';
+      title = '📚 Твои дела';
     } else if (arg.toLowerCase() === 'all') {
       // Show all tasks
       tasksToDisplay = taskData.uncompleted.concat(taskData.completed);
-      title = '📚 *All Tasks*';
-      showStatus = true;
+      title = '📚 Все дела · включая выполненные';
     } else {
       // Filter by tags
       const filterTags = parseTags(arg);
       if (filterTags.length === 0) {
-        return ctx.reply(
+        return panelReply(
+          ctx,
           '❌ Invalid filter. Use /list, /list all, or /list #tag',
         );
       }
@@ -47,16 +44,22 @@ export const listCommand = async (ctx: BotContext) => {
       );
 
       const tagStr = filterTags.map((t) => `#${t}`).join(' ');
-      title = `🏷️ *Tasks with ${tagStr}*`;
+      title = `🏷 Дела с тегами ${tagStr}`;
     }
 
     if (tasksToDisplay.length === 0) {
-      return ctx.reply(NO_TASK_MESSAGE);
+      return panelReply(ctx, NO_TASK_MESSAGE);
     }
 
-    const message = `${title}\n\n${formatTaskListStr(tasksToDisplay, showStatus)}`;
-
-    ctx.reply(message, { parse_mode: 'MarkdownV2' });
+    for (const message of splitMessages([
+      title.replace(/\*/g, ''),
+      '',
+      ...matrixLines(tasksToDisplay),
+    ])) {
+      await panelReply(ctx, message);
+    }
+    if (ctx.from && ctx.chat)
+      rememberTaskNumbers(ctx.from.id, ctx.chat.id, tasksToDisplay);
   } catch (error) {
     logAndReplyError(ctx, Command.LIST, error, '❌ Error fetching tasks.');
   }

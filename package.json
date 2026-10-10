@@ -7,6 +7,8 @@
     "typecheck": "tsc --noEmit",
     "prebuild": "bun src/scripts/generateChangelog.ts",
     "build": "tsc --noEmit",
+    "prestart:polling": "bun src/scripts/generateChangelog.ts",
+    "start:polling": "bun --env-file=.env src/polling.ts",
     "start": "bun --env-file=.env src/app.ts",
     "predev": "bun src/scripts/generateChangelog.ts",
     "dev": "bun --watch --env-file=.env src/dev.ts",

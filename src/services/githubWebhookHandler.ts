@@ -1,6 +1,5 @@
 import { type Bot, InlineKeyboard } from 'grammy';
 import { getGitHubFileInfo, getOctokit } from '../clients/github.js';
-import { ALLOWED_USERS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type {
   CalendarOpSession,
@@ -15,10 +14,12 @@ import { formatGitHubSyncMessage } from '../views/syncView.js';
 import { filterExternalCommits } from './commitFilter.js';
 import { analyzeTaskDiff, hasChanges } from './diffAnalyzer.js';
 import { parseMarkdown } from './markdownParser.js';
+import { profileOwner, profileUsers, runForUser } from './userScope.js';
 
-export const handleGitHubWebhook = async (
+const handleUserWebhook = async (
   payload: GitHubPushPayload,
   bot: Bot<BotContext>,
+  userId: number,
 ): Promise<void> => {
   // 1. Filter external commits
   const externalCommits = filterExternalCommits(payload.commits);
@@ -37,8 +38,8 @@ export const handleGitHubWebhook = async (
   const relevantCommits: GitHubCommit[] = [];
 
   for (const commit of externalCommits) {
-    const isModified = commit.modified.some((file) => filePath.endsWith(file));
-    const isAdded = commit.added.some((file) => filePath.endsWith(file));
+    const isModified = commit.modified.some((file) => filePath === file);
+    const isAdded = commit.added.some((file) => filePath === file);
 
     if (isModified || isAdded) {
       relevantCommits.push(commit);
@@ -144,11 +145,11 @@ export const handleGitHubWebhook = async (
         }
       }
 
-      if (ALLOWED_USERS.length > 0) {
-        if (calendarUpdates.length > 0) {
-          setPendingCalendarOps(ALLOWED_USERS[0], calendarUpdates);
+      if (profileUsers().includes(userId)) {
+        if (calendarUpdates.length > 0 && userId === profileOwner()) {
+          setPendingCalendarOps(userId, calendarUpdates);
 
-          await bot.api.sendMessage(ALLOWED_USERS[0], message, {
+          await bot.api.sendMessage(userId, message, {
             parse_mode: 'MarkdownV2',
             link_preview_options: { is_disabled: true },
             reply_markup: new InlineKeyboard()
@@ -159,7 +160,7 @@ export const handleGitHubWebhook = async (
               .text('No', 'cal_no'),
           });
         } else {
-          await bot.api.sendMessage(ALLOWED_USERS[0], message, {
+          await bot.api.sendMessage(userId, message, {
             parse_mode: 'MarkdownV2',
             link_preview_options: { is_disabled: true },
           });
@@ -178,4 +179,12 @@ export const handleGitHubWebhook = async (
       });
     }
   }
+};
+
+export const handleGitHubWebhook = async (
+  payload: GitHubPushPayload,
+  bot: Bot<BotContext>,
+) => {
+  for (const userId of profileUsers())
+    await runForUser(userId, () => handleUserWebhook(payload, bot, userId));
 };

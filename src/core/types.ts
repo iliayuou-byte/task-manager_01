@@ -15,6 +15,9 @@ export interface Task {
   // formatted as "HH:MM"
   duration?: string;
   priority?: Priority;
+  priorityLocked?: boolean;
+  important?: boolean;
+  urgent?: boolean;
   tags: string[];
   description?: string;
   // External link related to the task
@@ -32,7 +35,10 @@ export type TaskData = Record<Exclude<TaskTypeToOp, 'none'>, Task[]>;
 
 export type Field = keyof Task;
 
-export type EditableField = Exclude<Field, 'completed' | 'calendarEventId'>;
+export type EditableField = Exclude<
+  Field,
+  'completed' | 'calendarEventId' | 'important' | 'urgent' | 'priorityLocked'
+>;
 
 export interface Metadata {
   last_synced?: string;
@@ -40,6 +46,35 @@ export interface Metadata {
   tags?: string[];
   table_header?: string;
   timezone?: string;
+  ai_auto_priority?: string;
+  ai_priority_rules?: string;
+  reminder_times?: string;
+  reminder_saved_times?: string;
+  reminder_last_sent?: string;
+  wake_weekday_time?: string;
+  wake_friday_prompt_time?: string;
+  wake_weekend_sober_time?: string;
+  wake_weekend_drinking_time?: string;
+  wake_last_sent?: string;
+  wake_friday_prompt_sent?: string;
+  wake_weekend_mode?: string;
+  wake_weekend_mode_week?: string;
+  morning_enabled?: string;
+  morning_items?: string;
+  morning_active_items?: string;
+  morning_active_date?: string;
+  morning_message_id?: string;
+  morning_expires_at?: string;
+  morning_done?: string;
+  morning_wake_time?: string;
+  morning_note?: string;
+  fire_tv_host?: string;
+  fire_tv_enabled?: string;
+  fire_tv_media?: string;
+  calendar_events?: string;
+  calendar_source_name?: string;
+  calendar_imported_at?: string;
+  calendar_timezone?: string;
 }
 
 // GitHub Webhook Types

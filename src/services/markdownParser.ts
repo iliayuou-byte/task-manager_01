@@ -25,6 +25,9 @@ export const COL_IDX = {
   LINK: getColIdx('link'),
   CALENDAR_EVENT_ID: getColIdx('calendarEventId'),
   RECURRENCE_RULE: getColIdx('recurrenceRule'),
+  IMPORTANT: getColIdx('important'),
+  URGENT: getColIdx('urgent'),
+  LOCKED: getColIdx('priorityLocked'),
 };
 
 export interface ParseResult {
@@ -71,7 +74,73 @@ export const parseMarkdown = (content: string): ParseResult => {
       const match = line.match(FRONTMATTER_KEY_VALUE_PATTERN);
       if (match) {
         const [, key, value] = match;
-        if (key === 'last_synced') {
+        if (
+          key === 'reminder_times' ||
+          key === 'reminder_last_sent' ||
+          key === 'reminder_saved_times' ||
+          key === 'wake_weekday_time' ||
+          key === 'wake_friday_prompt_time' ||
+          key === 'wake_weekend_sober_time' ||
+          key === 'wake_weekend_drinking_time' ||
+          key === 'wake_last_sent' ||
+          key === 'wake_friday_prompt_sent' ||
+          key === 'wake_weekend_mode' ||
+          key === 'wake_weekend_mode_week' ||
+          key === 'morning_enabled' ||
+          key === 'morning_active_date' ||
+          key === 'morning_message_id' ||
+          key === 'morning_expires_at' ||
+          key === 'morning_wake_time' ||
+          key === 'fire_tv_host' ||
+          key === 'fire_tv_enabled' ||
+          key === 'calendar_imported_at' ||
+          key === 'calendar_timezone'
+        ) {
+          metadata[key] = value;
+        } else if (
+          key === 'morning_items' ||
+          key === 'morning_active_items' ||
+          key === 'morning_done' ||
+          key === 'morning_note'
+        ) {
+          try {
+            const stored: unknown = JSON.parse(value);
+            if (typeof stored === 'string') metadata[key] = stored;
+          } catch {
+            /* Ignore invalid checklist data. */
+          }
+        } else if (key === 'fire_tv_media') {
+          try {
+            const links: unknown = JSON.parse(value);
+            if (typeof links === 'string') metadata.fire_tv_media = links;
+          } catch {
+            /* Invalid TV media data is ignored. */
+          }
+        } else if (key === 'calendar_events') {
+          try {
+            const events: unknown = JSON.parse(value);
+            if (typeof events === 'string') metadata.calendar_events = events;
+          } catch {
+            /* Invalid calendar data is ignored. */
+          }
+        } else if (key === 'calendar_source_name') {
+          try {
+            const source: unknown = JSON.parse(value);
+            if (typeof source === 'string')
+              metadata.calendar_source_name = source;
+          } catch {
+            metadata.calendar_source_name = value;
+          }
+        } else if (key === 'ai_auto_priority') {
+          metadata.ai_auto_priority = value;
+        } else if (key === 'ai_priority_rules') {
+          try {
+            const rules: unknown = JSON.parse(value);
+            if (typeof rules === 'string') metadata.ai_priority_rules = rules;
+          } catch {
+            metadata.ai_priority_rules = value;
+          }
+        } else if (key === 'last_synced') {
           metadata.last_synced = value;
         } else if (key === 'total_tasks') {
           const parsed = parseInt(value, 10);
@@ -150,6 +219,18 @@ export const parseMarkdown = (content: string): ParseResult => {
 
           const task: Task = {
             completed,
+            priorityLocked:
+              getCell(cells, COL_IDX.LOCKED) === undefined
+                ? undefined
+                : cells[COL_IDX.LOCKED] === 'true',
+            important:
+              getCell(cells, COL_IDX.IMPORTANT) === undefined
+                ? undefined
+                : cells[COL_IDX.IMPORTANT] === 'true',
+            urgent:
+              getCell(cells, COL_IDX.URGENT) === undefined
+                ? undefined
+                : cells[COL_IDX.URGENT] === 'true',
             name: taskName,
             date: getCell(cells, COL_IDX.DATE),
             time: getCell(cells, COL_IDX.TIME),
@@ -236,6 +317,72 @@ export const serializeTaskMarkdown = (
   const lines: string[] = [];
 
   lines.push('---');
+  if (metadata.calendar_events)
+    lines.push(`calendar_events: ${JSON.stringify(metadata.calendar_events)}`);
+  if (metadata.calendar_source_name)
+    lines.push(
+      `calendar_source_name: ${JSON.stringify(metadata.calendar_source_name)}`,
+    );
+  if (metadata.calendar_imported_at)
+    lines.push(`calendar_imported_at: ${metadata.calendar_imported_at}`);
+  if (metadata.calendar_timezone)
+    lines.push(`calendar_timezone: ${metadata.calendar_timezone}`);
+  if (metadata.ai_auto_priority)
+    lines.push(`ai_auto_priority: ${metadata.ai_auto_priority}`);
+  if (metadata.ai_priority_rules)
+    lines.push(
+      `ai_priority_rules: ${JSON.stringify(metadata.ai_priority_rules)}`,
+    );
+  if (metadata.reminder_saved_times)
+    lines.push(`reminder_saved_times: ${metadata.reminder_saved_times}`);
+  if (metadata.reminder_times)
+    lines.push(`reminder_times: ${metadata.reminder_times}`);
+  if (metadata.reminder_last_sent)
+    lines.push(`reminder_last_sent: ${metadata.reminder_last_sent}`);
+  if (metadata.wake_weekday_time)
+    lines.push(`wake_weekday_time: ${metadata.wake_weekday_time}`);
+  if (metadata.wake_friday_prompt_time)
+    lines.push(`wake_friday_prompt_time: ${metadata.wake_friday_prompt_time}`);
+  if (metadata.wake_weekend_sober_time)
+    lines.push(`wake_weekend_sober_time: ${metadata.wake_weekend_sober_time}`);
+  if (metadata.wake_weekend_drinking_time)
+    lines.push(
+      `wake_weekend_drinking_time: ${metadata.wake_weekend_drinking_time}`,
+    );
+  if (metadata.wake_last_sent)
+    lines.push(`wake_last_sent: ${metadata.wake_last_sent}`);
+  if (metadata.wake_friday_prompt_sent)
+    lines.push(`wake_friday_prompt_sent: ${metadata.wake_friday_prompt_sent}`);
+  if (metadata.wake_weekend_mode)
+    lines.push(`wake_weekend_mode: ${metadata.wake_weekend_mode}`);
+  if (metadata.wake_weekend_mode_week)
+    lines.push(`wake_weekend_mode_week: ${metadata.wake_weekend_mode_week}`);
+  if (metadata.morning_enabled)
+    lines.push(`morning_enabled: ${metadata.morning_enabled}`);
+  if (metadata.morning_items)
+    lines.push(`morning_items: ${JSON.stringify(metadata.morning_items)}`);
+  if (metadata.morning_active_items)
+    lines.push(
+      `morning_active_items: ${JSON.stringify(metadata.morning_active_items)}`,
+    );
+  if (metadata.morning_active_date)
+    lines.push(`morning_active_date: ${metadata.morning_active_date}`);
+  if (metadata.morning_message_id)
+    lines.push(`morning_message_id: ${metadata.morning_message_id}`);
+  if (metadata.morning_expires_at)
+    lines.push(`morning_expires_at: ${metadata.morning_expires_at}`);
+  if (metadata.morning_done)
+    lines.push(`morning_done: ${JSON.stringify(metadata.morning_done)}`);
+  if (metadata.morning_wake_time)
+    lines.push(`morning_wake_time: ${metadata.morning_wake_time}`);
+  if (metadata.morning_note)
+    lines.push(`morning_note: ${JSON.stringify(metadata.morning_note)}`);
+  if (metadata.fire_tv_host)
+    lines.push(`fire_tv_host: ${metadata.fire_tv_host}`);
+  if (metadata.fire_tv_enabled)
+    lines.push(`fire_tv_enabled: ${metadata.fire_tv_enabled}`);
+  if (metadata.fire_tv_media)
+    lines.push(`fire_tv_media: ${JSON.stringify(metadata.fire_tv_media)}`);
   if (metadata.last_synced) {
     lines.push(`last_synced: ${metadata.last_synced}`);
   }
@@ -269,7 +416,9 @@ export const serializeTaskMarkdown = (
         return formatTags(task.tags);
       }
 
-      return escapeMarkdownTable(value as string | undefined);
+      return escapeMarkdownTable(
+        value === undefined ? undefined : String(value),
+      );
     });
 
     lines.push(`| ${row.join(' | ')} |`);

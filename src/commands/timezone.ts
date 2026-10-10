@@ -4,6 +4,7 @@ import { COMMON_TIMEZONES, Command } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { extractArg } from '../utils/index.js';
@@ -14,7 +15,7 @@ export const myTimezoneCommand = async (ctx: BotContext) => {
     ctx.chatAction = 'typing';
     const { metadata } = await queryTasks();
     const timezone = metadata.timezone || 'Not set';
-    ctx.reply(`🌍 Current timezone: *${timezone}*`, {
+    panelReply(ctx, `🌍 Current timezone: *${timezone}*`, {
       parse_mode: 'Markdown',
     });
   } catch (error) {
@@ -23,20 +24,20 @@ export const myTimezoneCommand = async (ctx: BotContext) => {
       op: Command.MYTIMEZONE,
       error,
     });
-    ctx.reply('❌ Failed to retrieve timezone.');
+    panelReply(ctx, '❌ Failed to retrieve timezone.');
   }
 };
 
 export const setTimezoneCommand = async (ctx: BotContext) => {
   if (!ctx.message || !('text' in ctx.message)) {
-    return ctx.reply(getNoTextMessage(Command.SETTIMEZONE));
+    return panelReply(ctx, getNoTextMessage(Command.SETTIMEZONE));
   }
 
   const text = ctx.message.text!;
   const timezone = extractArg(text, Command.SETTIMEZONE);
 
   if (!timezone) {
-    return ctx.reply('🌍 Select your timezone:', {
+    return panelReply(ctx, '🌍 Select your timezone:', {
       reply_markup: generateTimezoneKeyboard(),
     });
   }
@@ -50,7 +51,10 @@ export const applyTimezone = async (ctx: BotContext, timezone: string) => {
   try {
     Intl.DateTimeFormat(undefined, { timeZone: timezone });
   } catch {
-    return ctx.reply('❌ Invalid timezone ID. Use /settimezone to pick one.');
+    return panelReply(
+      ctx,
+      '❌ Invalid timezone ID. Use /settimezone to pick one.',
+    );
   }
 
   try {
@@ -58,14 +62,14 @@ export const applyTimezone = async (ctx: BotContext, timezone: string) => {
     const oldTimezone = metadata.timezone;
 
     if (oldTimezone === timezone) {
-      return ctx.reply(`Timezone is already set to: ${timezone}`);
+      return panelReply(ctx, `Timezone is already set to: ${timezone}`);
     }
 
     metadata.timezone = timezone;
 
     if (!oldTimezone) {
       await saveTasks(taskData, metadata);
-      return ctx.reply(`✅ Timezone set to: *${timezone}*`, {
+      return panelReply(ctx, `✅ Timezone set to: *${timezone}*`, {
         parse_mode: 'Markdown',
       });
     }
@@ -94,7 +98,8 @@ export const applyTimezone = async (ctx: BotContext, timezone: string) => {
 
     await saveTasks(taskData, metadata);
 
-    await ctx.reply(
+    await panelReply(
+      ctx,
       `✅ Timezone updated to: *${timezone}*\n\nAll task dates and times have been converted to the new timezone.`,
       { parse_mode: 'Markdown' },
     );
@@ -104,7 +109,7 @@ export const applyTimezone = async (ctx: BotContext, timezone: string) => {
       op: Command.SETTIMEZONE,
       error,
     });
-    await ctx.reply('❌ Failed to update timezone. Please try again.');
+    await panelReply(ctx, '❌ Failed to update timezone. Please try again.');
   }
 };
 

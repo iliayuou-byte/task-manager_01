@@ -4,13 +4,14 @@ import { Command, EDITABLE_FIELDS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { EditableField, Priority, Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
+import { taskFingerprint } from '../services/taskNumbers.js';
 import {
   escapeMarkdownV2,
   findTaskIdxByName,
   findTimeConflictingTask,
-  formatOperatedTaskStr,
   parseTags,
   promptCalendarAction,
 } from '../utils/index.js';
@@ -47,25 +48,38 @@ const generateEditKeyboard = (task: Task) => {
   }
 
   // Add cancel to last row
-  keyboard.text('❌ Cancel', 'edit_cancel');
+  keyboard.text('⬅️ Назад', 'edit_cancel').text('🏠 Меню', 'menu:home');
 
   return keyboard;
 };
 
 export const editSceneComposer = new Composer<BotContext>();
 
-export const enterEditScene = async (ctx: BotContext, taskIdx: number) => {
+export const enterEditScene = async (
+  ctx: BotContext,
+  taskIdx: number,
+  expected?: Task,
+) => {
   const { taskData } = await queryTasks();
+  if (expected)
+    taskIdx = taskData.uncompleted.findIndex(
+      (task) => taskFingerprint(task) === taskFingerprint(expected),
+    );
   const task = taskData.uncompleted[taskIdx];
 
   if (!task) {
-    await ctx.reply('❌ Task not found.');
+    await panelReply(ctx, '❌ Task not found.');
     return;
   }
 
-  ctx.session.editScene = { active: true, taskIdx };
+  ctx.session.editScene = {
+    active: true,
+    taskIdx,
+    fingerprint: taskFingerprint(task),
+  };
 
-  await ctx.reply(
+  await panelReply(
+    ctx,
     `Select a field to edit for *${escapeMarkdownV2(task.name)}*:`,
     {
       parse_mode: 'MarkdownV2',
@@ -84,15 +98,36 @@ editSceneComposer.callbackQuery(/^edit_(.+)$/, async (ctx) => {
 
   if (action === 'cancel') {
     ctx.session.editScene = undefined;
-    await ctx.editMessageText('❌ Edit cancelled.');
+    const { backToTask } = await import('../commands/menu.js');
+    await backToTask(ctx);
     return;
   }
 
+  if (action === 'back') {
+    const { taskData } = await queryTasks();
+    const task = taskData.uncompleted.find(
+      (task) => taskFingerprint(task) === state.fingerprint,
+    );
+    if (!task) {
+      ctx.session.editScene = undefined;
+      return await panelReply(ctx, 'Дело изменилось. Открой список заново.');
+    }
+    state.field = undefined;
+    return await panelReply(ctx, 'Выбери поле для изменения:', {
+      reply_markup: generateEditKeyboard(task),
+    });
+  }
   if (isValidField(action)) {
     state.field = action;
-    await ctx.editMessageText(
+    await panelReply(
+      ctx,
       `✏️ Please enter the new value for *${escapeMarkdownV2(action)}*:`,
-      { parse_mode: 'MarkdownV2' },
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: new InlineKeyboard()
+          .text('⬅️ Назад', 'edit_back')
+          .text('🏠 Меню', 'menu:home'),
+      },
     );
   }
 });
@@ -105,7 +140,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
   }
 
   if (!state.field) {
-    return ctx.reply('⚠️ Please select a field first.');
+    return panelReply(ctx, '⚠️ Please select a field first.');
   }
 
   const fieldToUpdate = state.field;
@@ -116,16 +151,22 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     const { metadata, taskData } = await queryTasks();
 
     if (!metadata.timezone) {
-      await ctx.reply(
+      await panelReply(
+        ctx,
         '❌ Timezone not set. Please set your timezone first using /settimezone command.',
       );
       ctx.session.editScene = undefined;
       return;
     }
 
-    const oldTask = taskData.uncompleted[state.taskIdx];
+    const taskIdx = state.fingerprint
+      ? taskData.uncompleted.findIndex(
+          (task) => taskFingerprint(task) === state.fingerprint,
+        )
+      : state.taskIdx;
+    const oldTask = taskData.uncompleted[taskIdx];
     if (!oldTask) {
-      await ctx.reply('❌ Task not found.');
+      await panelReply(ctx, '❌ Task not found.');
       ctx.session.editScene = undefined;
       return;
     }
@@ -138,7 +179,8 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     );
 
     if (!updatedTask) {
-      await ctx.reply(
+      await panelReply(
+        ctx,
         `⚠️ The new value is the same as the current one for *${escapeMarkdownV2(
           fieldToUpdate,
         )}*\\. No changes made\\.`,
@@ -153,20 +195,25 @@ editSceneComposer.on('message:text', async (ctx, next) => {
         newValue,
         updatedTask.tags,
         metadata.timezone,
+        metadata,
       );
-      updatedTask = { ...updatedTask, ...generatedTask };
+      updatedTask = {
+        ...updatedTask,
+        ...generatedTask,
+        tags: [...new Set([...updatedTask.tags, ...generatedTask.tags])],
+        ...(oldTask.priorityLocked
+          ? { important: oldTask.important, urgent: oldTask.urgent }
+          : {}),
+      };
     }
 
-    taskData.uncompleted[state.taskIdx] = updatedTask;
-    await saveTasks(taskData, metadata);
-
-    await ctx.reply(
-      formatOperatedTaskStr(updatedTask, {
-        command: Command.EDIT,
-        prefix: `✅ *${escapeMarkdownV2(state.field)}* in `,
-      }),
-      { parse_mode: 'MarkdownV2' },
-    );
+    taskData.uncompleted[taskIdx] = updatedTask;
+    if (!(await saveTasks(taskData, metadata)))
+      throw new Error('Storage did not confirm save');
+    ctx.session.editScene = undefined;
+    const { returnToTaskList } = await import('../commands/menu.js');
+    await returnToTaskList(ctx);
+    await panelNotice(ctx, `✅ Изменено: ${updatedTask.name}`);
 
     // Calendar Integration Logic
     if (oldTask.calendarEventId) {
@@ -175,13 +222,18 @@ editSceneComposer.on('message:text', async (ctx, next) => {
           fieldToUpdate,
         )
       ) {
-        await promptCalendarAction(ctx, 'Update Google Calendar Event?', [
-          {
-            type: 'update',
-            taskName: updatedTask.name,
-            calendarEventId: oldTask.calendarEventId,
-          },
-        ]);
+        await promptCalendarAction(
+          ctx,
+          'Update Google Calendar Event?',
+          [
+            {
+              type: 'update',
+              taskName: updatedTask.name,
+              calendarEventId: oldTask.calendarEventId,
+            },
+          ],
+          true,
+        );
       }
     } else {
       if (
@@ -189,13 +241,17 @@ editSceneComposer.on('message:text', async (ctx, next) => {
         updatedTask.date &&
         updatedTask.time
       ) {
-        await promptCalendarAction(ctx, 'Add this task to Google Calendar?', [
-          { type: 'add', taskName: updatedTask.name },
-        ]);
+        await promptCalendarAction(
+          ctx,
+          'Add this task to Google Calendar?',
+          [{ type: 'add', taskName: updatedTask.name }],
+          true,
+        );
       }
     }
   } catch (error) {
-    await ctx.reply(
+    await panelReply(
+      ctx,
       `❌ Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`,
     );
     logger.errorWithContext({ userId, op: Command.EDIT, error });
