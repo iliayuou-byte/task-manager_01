@@ -228,8 +228,8 @@ Link export is a snapshot unless it contains a subscription URL; refresh require
 re-importing an updated file.
 
 `clients/google-calendar.ts` syncs the owner's imported schedule to the
-configured Google calendar. File uploads save and sync immediately; pasted ICS
-text retains confirmation. Sync uses deterministic Google event IDs and a
+configured Google calendar. Direct private-chat ICS file uploads save and sync
+immediately; pasted ICS text retains confirmation. Sync uses deterministic Google event IDs and a
 private extended-property marker, so retries do not duplicate events and only
 previous bot-imported events are removed on replacement. A failed sync keeps
 the bot's schedule and offers a retry button. Apple Calendar displays the same
