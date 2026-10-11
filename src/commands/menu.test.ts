@@ -995,6 +995,37 @@ test('completion replaces the visible list with fresh storage and rejects its ol
   expect(f.data().taskData.completed).toHaveLength(1);
 });
 
+test('renaming a task saves the title without calling AI or changing other fields', async () => {
+  const f = fixture(594);
+  f.data().taskData.uncompleted[0] = {
+    name: 'Старое название',
+    completed: false,
+    tags: ['дом'],
+    date: '2026-10-12',
+    time: '18:30',
+    important: true,
+    urgent: false,
+  };
+  const ai = spyOn(aiClient, 'generateAiTask').mockRejectedValue(
+    new Error('AI should not be called for a rename'),
+  );
+  spies.push(ai);
+  await f.text(MENU.all);
+  await f.tap('1. Старое название');
+  await f.tap('Изменить');
+  await f.tap('Name');
+  await f.text('Новое название');
+  expect(f.data().taskData.uncompleted[0]).toMatchObject({
+    name: 'Новое название',
+    tags: ['дом'],
+    date: '2026-10-12',
+    time: '18:30',
+    important: true,
+    urgent: false,
+  });
+  expect(ai).not.toHaveBeenCalled();
+});
+
 test('editing a task returns to an updated Today list and keeps its task keyboard', async () => {
   const f = fixture(591);
   f.data().taskData.uncompleted[1].date = '2099-01-01';
