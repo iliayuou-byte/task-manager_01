@@ -1,5 +1,4 @@
 import { Composer, InlineKeyboard } from 'grammy';
-import { generateAiTask } from '../clients/ai.js';
 import { Command, EDITABLE_FIELDS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { EditableField, Priority, Task } from '../core/types.js';
@@ -171,7 +170,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       return;
     }
 
-    let updatedTask = validateAndGetUpdatedTask(
+    const updatedTask = validateAndGetUpdatedTask(
       taskData.uncompleted,
       oldTask,
       fieldToUpdate,
@@ -188,23 +187,6 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       );
       ctx.session.editScene = undefined;
       return;
-    }
-
-    if (fieldToUpdate === 'name') {
-      const generatedTask = await generateAiTask(
-        newValue,
-        updatedTask.tags,
-        metadata.timezone,
-        metadata,
-      );
-      updatedTask = {
-        ...updatedTask,
-        ...generatedTask,
-        tags: [...new Set([...updatedTask.tags, ...generatedTask.tags])],
-        ...(oldTask.priorityLocked
-          ? { important: oldTask.important, urgent: oldTask.urgent }
-          : {}),
-      };
     }
 
     taskData.uncompleted[taskIdx] = updatedTask;
