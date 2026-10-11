@@ -22,7 +22,7 @@ const robustString = (description: string, defaultValue = '') =>
     .describe(description);
 
 const aiTaskSchema = z.object({
-  tags: z.array(z.string().max(20)).max(3).default([]),
+  tags: z.array(z.string().max(20)).max(3),
   important: z
     .boolean()
     .nullable()
@@ -172,6 +172,7 @@ If the input implies a recurring event (e.g., "every Monday", "daily", "each wee
 5. **AI Description Insight**:
    - Generate a brief (max 15 words) helpful insight, background, or instruction.
    - **STRICT RULE**: Do NOT include the user's tags in the description.
+6. **Tags**: Always include the tags key as an array. Use [] when no tag applies.
 
 ### OUTPUT
 - Return ONLY valid JSON matching the schema.
