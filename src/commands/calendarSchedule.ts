@@ -200,7 +200,7 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
   composer.on('message:text', async (ctx, next) => {
     if (ctx.chat.type !== 'private') return next();
     const text = ctx.message.text.trim();
-    if (text === MENU.plan) return showCalendar(ctx);
+    if (text === MENU.plan) return showToday(ctx);
     const state = states.get(chatKey(ctx));
     if (text.startsWith('/') || Object.values(MENU).includes(text as never)) {
       states.delete(chatKey(ctx));
