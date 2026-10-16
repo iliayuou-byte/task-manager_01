@@ -137,7 +137,8 @@ const showWeek = async (ctx: BotContext, requestedStart?: string) => {
   const last = shiftDate(first, 6);
   const events = readScheduleEvents(metadata.calendar_events);
   const tasks = taskData.uncompleted.filter(
-    (task) => !task.completed && task.date && task.date >= first && task.date <= last,
+    (task) =>
+      !task.completed && task.date && task.date >= first && task.date <= last,
   );
   const lines = [`🗓 План на неделю · ${first} — ${last}`, ''];
   for (let offset = 0; offset < 7; offset++) {
@@ -331,23 +332,31 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
       state.busy = false;
     }
   });
-  composer.callbackQuery(/^calendar:week:(now|prev|next):([\w-]+)$/, async (ctx) => {
-    const [, action, id] = ctx.match;
-    const state = states.get(chatKey(ctx));
-    if (!state || state.id !== id || state.expires < Date.now()) {
-      await ctx.answerCallbackQuery({ text: 'Экран устарел. Открой календарь заново.' });
-      return;
-    }
-    if (action !== 'now' && !state.weekStart) {
-      await ctx.answerCallbackQuery({ text: 'Сначала открой план на неделю.' });
-      return;
-    }
-    const start = action === 'now'
-      ? undefined
-      : shiftDate(state.weekStart!, action === 'prev' ? -7 : 7);
-    await ctx.answerCallbackQuery();
-    return showWeek(ctx, start);
-  });
+  composer.callbackQuery(
+    /^calendar:week:(now|prev|next):([\w-]+)$/,
+    async (ctx) => {
+      const [, action, id] = ctx.match;
+      const state = states.get(chatKey(ctx));
+      if (!state || state.id !== id || state.expires < Date.now()) {
+        await ctx.answerCallbackQuery({
+          text: 'Экран устарел. Открой календарь заново.',
+        });
+        return;
+      }
+      if (action !== 'now' && !state.weekStart) {
+        await ctx.answerCallbackQuery({
+          text: 'Сначала открой план на неделю.',
+        });
+        return;
+      }
+      const start =
+        action === 'now'
+          ? undefined
+          : shiftDate(state.weekStart!, action === 'prev' ? -7 : 7);
+      await ctx.answerCallbackQuery();
+      return showWeek(ctx, start);
+    },
+  );
   composer.callbackQuery(
     /^calendar:(open|today|import|save|sync):([\w-]+)$/,
     async (ctx) => {
