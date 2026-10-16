@@ -1,3 +1,5 @@
+import { recordUsageError } from '../services/usageStats.js';
+
 enum LogLevel {
   ERROR = 0,
   WARN = 1,
@@ -31,12 +33,15 @@ class Logger {
   }
 
   errorWithContext(params: LogParams, ...args: unknown[]): void {
+    recordUsageError();
     if (this.level >= LogLevel.ERROR) {
       console.error(this.format('ERROR', formatLogMessage(params)), ...args);
     }
   }
 
   warnWithContext(params: LogParams, ...args: unknown[]): void {
+    if (params.op && ['VOICE', 'INPUT_RETRY', 'ASSISTANT'].includes(params.op))
+      recordUsageError();
     if (this.level >= LogLevel.WARN) {
       console.warn(this.format('WARN', formatLogMessage(params)), ...args);
     }

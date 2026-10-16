@@ -1,6 +1,7 @@
 import type { Octokit } from '@octokit/rest';
 
 import logger from '../core/logger.js';
+import { profileFilePath } from '../services/userScope.js';
 
 const getErrorStatus = (error: unknown): number | undefined =>
   error instanceof Error && 'status' in error
@@ -56,7 +57,8 @@ export const getGitHubFileInfo = (): GitHubFileInfo => {
     throw new Error('FILE_PATH is not configured');
   }
 
-  return parseGitHubPath(path);
+  const info = parseGitHubPath(path);
+  return { ...info, filePath: profileFilePath(info.filePath) };
 };
 
 export const fetchFileContent = async (): Promise<string> => {

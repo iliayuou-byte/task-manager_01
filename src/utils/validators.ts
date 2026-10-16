@@ -91,6 +91,18 @@ const validators = {
 
 // Field configurations for all task fields
 export const FIELD_CONFIGS: Record<Field, FieldConfig> = {
+  priorityLocked: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'PriorityLocked must be boolean',
+  },
+  important: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'Important must be boolean',
+  },
+  urgent: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'Urgent must be boolean',
+  },
   completed: {
     validator: validators.completed,
     errorMessage: 'Completed must be a boolean value',
