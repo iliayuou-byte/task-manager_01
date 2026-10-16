@@ -48,7 +48,7 @@ export const completeCommand = async (ctx: BotContext) => {
 
     await showCompletePicker(ctx, taskData.uncompleted);
     await panelNotice(ctx, `✅ Выполнено: ${task.name}`, {
-      reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+      reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:tasks'),
     });
   } catch (error) {
     await logAndReplyError(
