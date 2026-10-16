@@ -182,7 +182,7 @@ const handleComplete = async (
     throw new Error('Storage did not confirm save');
   await showCompletePicker(ctx, taskData.uncompleted, page);
   await panelNotice(ctx, `✅ Выполнено: ${task.name}`, {
-    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:tasks'),
   });
 };
 
@@ -228,7 +228,7 @@ const handleRemove = async (
   const { returnToTaskList } = await import('../commands/menu.js');
   await returnToTaskList(ctx);
   await panelNotice(ctx, `🗑️ Удалено: ${task.name}`, {
-    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+    reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:tasks'),
   });
 
   if (calendarEventId) {
