@@ -627,7 +627,7 @@ test('reminder deletion keyboard identifies the exact time instead of identical 
   expect(f.data().metadata.reminder_times).toBe('19:00');
 });
 
-test('complete picker remains open across consecutive completions, with inline Back notice', async () => {
+test('complete picker remains open and Back notice returns to task list', async () => {
   const f = fixture(540);
   await f.text('/complete');
   await f.tap('Первое');
@@ -637,9 +637,11 @@ test('complete picker remains open across consecutive completions, with inline B
     .reverse()
     .find((call) => String(call.text).includes('Выполнено: Первое'));
   expect(notice?.reply_markup).toEqual({
-    inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'menu:home' }]],
+    inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'menu:tasks' }]],
   });
   expect(f.data().taskData.completed).toHaveLength(1);
+  await f.click('menu:tasks');
+  expect(f.labels()).toContain('Второе');
   await f.tap('Второе');
   expect(f.data().taskData.uncompleted).toHaveLength(0);
   expect(f.data().taskData.completed).toHaveLength(2);
