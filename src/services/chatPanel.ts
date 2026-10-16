@@ -59,10 +59,12 @@ export const panelReply = async (
       options = {
         ...options,
         reply_markup: {
-          inline_keyboard: [[
-            { text: '⬅️ Назад', callback_data: 'menu:back' },
-            { text: '🏠 Меню', callback_data: 'menu:home' },
-          ]],
+          inline_keyboard: [
+            [
+              { text: '⬅️ Назад', callback_data: 'menu:back' },
+              { text: '🏠 Меню', callback_data: 'menu:home' },
+            ],
+          ],
         },
       };
     } else if ('inline_keyboard' in markup) {
