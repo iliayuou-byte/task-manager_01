@@ -53,16 +53,10 @@ export const buildContextKeyboard = (
     if ((page + 1) * 8 < actions.length)
       footer.unshift({ text: '▶️', callback_data: `kbd:${id}:${page + 1}` });
   }
-  const occurrences = new Map<string, number>();
   const displayed = [...visible, ...footer];
   displayed.forEach((button, index) => {
-    const base = button.text.length > 26 ? `${button.text.slice(0, 25)}…` : button.text;
-    const occurrence = (occurrences.get(base) ?? 0) + 1;
-    occurrences.set(base, occurrence);
     const label =
-      displayed.filter((item) => item.text.slice(0, 26) === base).length > 1
-        ? `${base} (${occurrence})`
-        : base;
+      button.text.length > 26 ? `${button.text.slice(0, 25)}…` : button.text;
     keyboard.text(label, button.callback_data!);
     if (index % 2 === 1) keyboard.row();
   });
