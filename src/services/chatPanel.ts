@@ -1,6 +1,5 @@
 import type { BotContext } from '../middlewares/session.js';
-import { navigationKeyboard } from '../views/menuView.js';
-import { buildContextKeyboard, rememberKeyboard } from './contextKeyboard.js';
+import { buildContextKeyboard } from './contextKeyboard.js';
 
 type ReplyOptions = Parameters<BotContext['reply']>[1];
 interface Panel {
@@ -8,6 +7,7 @@ interface Panel {
   updated: number;
 }
 const panels = new Map<number, Panel>();
+const legacyKeyboardHidden = new Set<number>();
 const started = new WeakSet<BotContext>();
 const cleanedInputs = new WeakSet<BotContext>();
 export const beginPanel = (ctx: BotContext) => {
@@ -51,11 +51,21 @@ export const panelReply = async (
   ctx: BotContext,
   text: string,
   options?: ReplyOptions,
+  panelOptions: { navigation?: boolean } = {},
 ) => {
-  if (ctx.chat?.type === 'private') {
+  if (ctx.chat?.type === 'private' && panelOptions.navigation !== false) {
     const markup = options?.reply_markup;
-    if (!markup) options = { ...options, reply_markup: navigationKeyboard() };
-    else if ('inline_keyboard' in markup) {
+    if (!markup) {
+      options = {
+        ...options,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '⬅️ Назад', callback_data: 'menu:back' },
+            { text: '🏠 Меню', callback_data: 'menu:home' },
+          ]],
+        },
+      };
+    } else if ('inline_keyboard' in markup) {
       const rows = markup.inline_keyboard.map((row) => [...row]);
       const buttons = rows.flat();
       const footer = [];
@@ -72,28 +82,47 @@ export const panelReply = async (
       options = { ...options, reply_markup: { inline_keyboard: rows } };
     }
   }
-  const markup = options?.reply_markup;
-  let keyboardActions: Map<string, string> | undefined;
-  if (ctx.chat?.type === 'private' && markup) {
-    if (
-      'inline_keyboard' in markup &&
-      markup.inline_keyboard.flat().every((button) => 'callback_data' in button)
-    ) {
-      const screen = buildContextKeyboard(markup.inline_keyboard, {
-        chat: ctx.chat.id,
-        text,
-        options,
+  let markup = options?.reply_markup;
+  if (
+    ctx.chat?.type === 'private' &&
+    markup &&
+    'inline_keyboard' in markup &&
+    markup.inline_keyboard.flat().every((button) => 'callback_data' in button)
+  ) {
+    const screen = buildContextKeyboard(markup.inline_keyboard, {
+      chat: ctx.chat.id,
+      text,
+      options,
+    });
+    options = { ...options, reply_markup: screen.keyboard };
+    markup = screen.keyboard;
+  }
+  if (
+    ctx.chat?.type === 'private' &&
+    markup &&
+    'inline_keyboard' in markup &&
+    !legacyKeyboardHidden.has(ctx.chat.id)
+  ) {
+    legacyKeyboardHidden.add(ctx.chat.id);
+    let notice;
+    try {
+      notice = await ctx.reply('⌨️ Обновляю кнопки меню…', {
+        reply_markup: { remove_keyboard: true },
       });
-      keyboardActions = screen.callbacks;
-      options = { ...options, reply_markup: screen.keyboard };
-    } else if ('keyboard' in markup) keyboardActions = new Map();
+      await ctx.api.deleteMessage(ctx.chat.id, notice.message_id);
+    } catch {
+      legacyKeyboardHidden.delete(ctx.chat.id);
+      if (notice) {
+        try {
+          await ctx.api.deleteMessage(ctx.chat.id, notice.message_id);
+        } catch {
+          /* Best effort. */
+        }
+      }
+    }
   }
-  if (/^(?:❌|Не удалось|Дело изменилось)/.test(text)) {
-    const result = await ctx.reply(text, options);
-    if (ctx.chat && keyboardActions)
-      rememberKeyboard(ctx.chat.id, keyboardActions);
-    return result;
-  }
+  if (/^(?:❌|Не удалось|Дело изменилось)/.test(text))
+    return ctx.reply(text, options);
 
   if (ctx.chat?.type !== 'private') return ctx.reply(text, options);
   const chat = ctx.chat.id;
@@ -136,7 +165,6 @@ export const panelReply = async (
     }
   }
   const message = await ctx.reply(text, options);
-  if (keyboardActions) rememberKeyboard(chat, keyboardActions);
   started.add(ctx);
   if (first) {
     panels.set(chat, { ids: [message.message_id], updated: Date.now() });
