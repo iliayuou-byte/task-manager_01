@@ -873,6 +873,10 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         rememberTaskNumbers(ctx.from.id, ctx.chat.id, tasks);
         return;
       }
+      if (action === 'tasks') {
+        if (state) state.input = undefined;
+        return await showTasks(ctx, state?.today ?? false);
+      }
       if (!state) return;
       if (action === 'wakeearlier') return await adjustWakeTime(ctx, 'earlier');
       if (action === 'wakelater') return await adjustWakeTime(ctx, 'later');
@@ -890,10 +894,6 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           state,
           (state.times ?? []).filter((_, index) => index !== Number(value)),
         );
-      if (action === 'tasks' && state.tasks) {
-        state.input = undefined;
-        return await showTasks(ctx, state.today);
-      }
       if (action === 'card' && state.selected)
         return await card(ctx, state, state.selected);
       if (action === 'minutes') {
