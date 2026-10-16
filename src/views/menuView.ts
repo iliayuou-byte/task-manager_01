@@ -1,4 +1,4 @@
-import { InlineKeyboard, Keyboard } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 
 export const MENU = {
   today: '📋 Сегодня',
@@ -14,20 +14,18 @@ export const MENU = {
   back: '⬅️ Назад',
 } as const;
 
-export const mainKeyboard = () =>
-  new Keyboard()
-    .text(MENU.today)
-    .text(MENU.all)
+export const mainInlineKeyboard = () =>
+  new InlineKeyboard()
+    .text(MENU.today, 'menu:today')
+    .text(MENU.all, 'menu:all')
     .row()
-    .text(MENU.add)
-    .text(MENU.now)
+    .text(MENU.add, 'menu:add')
+    .text(MENU.now, 'menu:now')
     .row()
-    .text(MENU.settings)
-    .text(MENU.chat)
+    .text(MENU.settings, 'menu:settings')
+    .text(MENU.chat, 'menu:chat')
     .row()
-    .text(MENU.plan)
-    .resized()
-    .persistent();
+    .text(MENU.plan, 'menu:calendar');
 
 export const settingsKeyboard = () =>
   new InlineKeyboard()
