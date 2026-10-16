@@ -10,10 +10,7 @@ import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { editSceneComposer } from '../scenes/editTaskScene.js';
 import { AssistantHistory } from '../services/assistantHistory.js';
-import {
-  getKeyboardAction,
-  registerContextKeyboard,
-} from '../services/contextKeyboard.js';
+import { registerContextKeyboard } from '../services/contextKeyboard.js';
 import {
   PendingInputStore,
   registerPendingInputs,
@@ -166,16 +163,20 @@ const fixture = (user: number) => {
       .reverse()
       .find(
         (call) =>
-          call.reply_markup && 'keyboard' in (call.reply_markup as object),
+          call.reply_markup &&
+          'inline_keyboard' in (call.reply_markup as object),
       );
     const markup = call?.reply_markup as
-      | { keyboard: Array<Array<{ text: string }>> }
+      | {
+          inline_keyboard: Array<
+            Array<{ text: string; callback_data?: string }>
+          >;
+        }
       | undefined;
-    const found = markup?.keyboard
+    const found = markup?.inline_keyboard
       .flat()
       .find((item) => item.text.includes(label));
-    const action = found && getKeyboardAction(user, found.text);
-    if (action) return action;
+    if (found?.callback_data) return found.callback_data;
     throw new Error(`Button missing: ${label}`);
   };
   const labels = (): string[] => {
@@ -183,18 +184,15 @@ const fixture = (user: number) => {
       .reverse()
       .find(
         (call) =>
-          call.reply_markup && 'keyboard' in (call.reply_markup as object),
+          call.reply_markup &&
+          'inline_keyboard' in (call.reply_markup as object),
       );
     const markup = call?.reply_markup as
-      | { keyboard: Array<Array<{ text: string }>> }
+      | { inline_keyboard: Array<Array<{ text: string }>> }
       | undefined;
-    return markup?.keyboard.flat().map((item) => item.text) ?? [];
+    return markup?.inline_keyboard.flat().map((item) => item.text) ?? [];
   };
-  const tap = async (label: string) => {
-    const value = labels().find((value) => value.includes(label));
-    if (!value) throw new Error(`Button missing: ${label}`);
-    await text(value);
-  };
+  const tap = async (label: string) => click(button(label));
   return {
     bot,
     text,
