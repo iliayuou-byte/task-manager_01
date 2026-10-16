@@ -97,10 +97,15 @@ export const menuCommand = async (ctx: BotContext) => {
   newState(ctx);
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
-  await panelReply(ctx, HOME_TEXT, {
-    reply_markup: mainInlineKeyboard(),
-    parse_mode: 'HTML',
-  }, { navigation: false });
+  await panelReply(
+    ctx,
+    HOME_TEXT,
+    {
+      reply_markup: mainInlineKeyboard(),
+      parse_mode: 'HTML',
+    },
+    { navigation: false },
+  );
 };
 
 export const returnToTaskList = async (ctx: BotContext) => {
