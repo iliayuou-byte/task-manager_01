@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Composer, InlineKeyboard } from 'grammy';
+import { type Composer } from 'grammy';
 import type { BotContext } from '../middlewares/session.js';
 
 type Button = { text: string; callback_data?: string };
@@ -23,7 +23,6 @@ export const buildContextKeyboard = (
     id?: string;
   },
 ) => {
-  const keyboard = new InlineKeyboard();
   const buttons = rows.flat().filter((button) => button.callback_data);
   const footer = buttons.filter((button) =>
     /^(?:⬅️ )?Назад$|^(?:🏠 )?Меню$|^◀|^▶|^Next|^✏️ Ввести HH:MM$/.test(
@@ -53,14 +52,24 @@ export const buildContextKeyboard = (
     if ((page + 1) * 8 < actions.length)
       footer.unshift({ text: '▶️', callback_data: `kbd:${id}:${page + 1}` });
   }
-  const displayed = [...visible, ...footer];
-  displayed.forEach((button, index) => {
-    const label =
-      button.text.length > 26 ? `${button.text.slice(0, 25)}…` : button.text;
-    keyboard.text(label, button.callback_data!);
-    if (index % 2 === 1) keyboard.row();
-  });
-  if (displayed.length % 2) keyboard.row();
+  const rowsOfPairs = (items: Button[]) => {
+    const result: { text: string; callback_data: string }[][] = [];
+    for (let index = 0; index < items.length; index += 2) {
+      result.push(
+        items.slice(index, index + 2).map((button) => ({
+          text:
+            button.text.length > 26
+              ? `${button.text.slice(0, 25)}…`
+              : button.text,
+          callback_data: button.callback_data!,
+        })),
+      );
+    }
+    return result;
+  };
+  const keyboard = {
+    inline_keyboard: [...rowsOfPairs(visible), ...rowsOfPairs(footer)],
+  };
   return { keyboard };
 };
 
