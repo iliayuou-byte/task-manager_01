@@ -165,7 +165,7 @@ const showWeek = async (ctx: BotContext, requestedStart?: string) => {
   const state = createState(ctx);
   state.weekStart = first;
   state.hasSchedule = events.length > 0;
-  return show(ctx, lines.join('\\n'), state);
+  return show(ctx, lines.join('\n'), state);
 };
 
 const syncSavedCalendar = async (
@@ -331,7 +331,7 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
       state.busy = false;
     }
   });
-  composer.callbackQuery(/^calendar:week:(now|prev|next):([\\w-]+)$/, async (ctx) => {
+  composer.callbackQuery(/^calendar:week:(now|prev|next):([\w-]+)$/, async (ctx) => {
     const [, action, id] = ctx.match;
     const state = states.get(chatKey(ctx));
     if (!state || state.id !== id || state.expires < Date.now()) {
