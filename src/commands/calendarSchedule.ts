@@ -25,6 +25,7 @@ interface CalendarState {
   preview?: ImportedCalendar;
   source?: string;
   hasSchedule?: boolean;
+  weekStart?: string;
 }
 const states = new Map<string, CalendarState>();
 const syncing = new Set<number>();
@@ -50,6 +51,12 @@ const keyboard = (state: CalendarState, includeSave = false) => {
       .row();
   else if (state.step !== 'upload') {
     result.text('📅 План на сегодня', `calendar:today:${state.id}`).row();
+    result.text('🗓 План на неделю', `calendar:week:now:${state.id}`).row();
+    if (state.weekStart)
+      result
+        .text('◀️ Неделя', `calendar:week:prev:${state.id}`)
+        .text('Следующая ▶️', `calendar:week:next:${state.id}`)
+        .row();
     result.text('📤 Импортировать .ics', `calendar:import:${state.id}`).row();
     if (state.hasSchedule)
       result.text('🔄 В Google Calendar', `calendar:sync:${state.id}`).row();
@@ -111,6 +118,54 @@ const showToday = async (ctx: BotContext) => {
   const state = createState(ctx);
   state.hasSchedule = readScheduleEvents(metadata.calendar_events).length > 0;
   return show(ctx, lines.join('\n'), state);
+};
+
+const shiftDate = (date: string, days: number) => {
+  const shifted = new Date(`${date}T12:00:00Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+};
+const mondayOf = (date: string) => {
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return shiftDate(date, -((weekday + 6) % 7));
+};
+const showWeek = async (ctx: BotContext, requestedStart?: string) => {
+  const { metadata, taskData } = await queryTasks();
+  const timezone = metadata.timezone || metadata.calendar_timezone || 'UTC';
+  const today = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd');
+  const first = requestedStart || mondayOf(today);
+  const last = shiftDate(first, 6);
+  const events = readScheduleEvents(metadata.calendar_events);
+  const tasks = taskData.uncompleted.filter(
+    (task) => !task.completed && task.date && task.date >= first && task.date <= last,
+  );
+  const lines = [`🗓 План на неделю · ${first} — ${last}`, ''];
+  for (let offset = 0; offset < 7; offset++) {
+    const date = shiftDate(first, offset);
+    const dayEvents = events
+      .filter((event) => event.date === date)
+      .sort((a, b) => a.start.localeCompare(b.start));
+    const dayTasks = tasks.filter((task) => task.date === date);
+    const label = new Intl.DateTimeFormat('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      timeZone: 'UTC',
+    }).format(new Date(`${date}T12:00:00Z`));
+    lines.push(`📍 ${label}`);
+    if (!dayEvents.length && !dayTasks.length) {
+      lines.push('  —');
+      continue;
+    }
+    for (const event of dayEvents)
+      lines.push(`  ${event.start}–${event.end} · ${event.title}`);
+    for (const task of dayTasks)
+      lines.push(`  ☑️ ${task.time ? `${task.time} · ` : ''}${task.name}`);
+  }
+  const state = createState(ctx);
+  state.weekStart = first;
+  state.hasSchedule = events.length > 0;
+  return show(ctx, lines.join('\\n'), state);
 };
 
 const syncSavedCalendar = async (
@@ -275,6 +330,23 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
     } finally {
       state.busy = false;
     }
+  });
+  composer.callbackQuery(/^calendar:week:(now|prev|next):([\\w-]+)$/, async (ctx) => {
+    const [, action, id] = ctx.match;
+    const state = states.get(chatKey(ctx));
+    if (!state || state.id !== id || state.expires < Date.now()) {
+      await ctx.answerCallbackQuery({ text: 'Экран устарел. Открой календарь заново.' });
+      return;
+    }
+    if (action !== 'now' && !state.weekStart) {
+      await ctx.answerCallbackQuery({ text: 'Сначала открой план на неделю.' });
+      return;
+    }
+    const start = action === 'now'
+      ? undefined
+      : shiftDate(state.weekStart!, action === 'prev' ? -7 : 7);
+    await ctx.answerCallbackQuery();
+    return showWeek(ctx, start);
   });
   composer.callbackQuery(
     /^calendar:(open|today|import|save|sync):([\w-]+)$/,
