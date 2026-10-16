@@ -46,7 +46,6 @@ import {
 } from './services/usageStats.js';
 import { profileOwner, runForUser } from './services/userScope.js';
 import { START_WORDING } from './views/generalView.js';
-import { mainKeyboard } from './views/menuView.js';
 
 profileOwner();
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -158,9 +157,7 @@ opComposer.callbackQuery(/^tz_(.+)$/, async (ctx) => {
 bot.use(infoComposer, opComposer);
 
 bot.on('message:text', (ctx) => {
-  panelReply(ctx, 'Выбери действие кнопками или отправь ГС с делами.', {
-    reply_markup: mainKeyboard(),
-  }).catch((error) => {
+  menuCommand(ctx).catch((error) => {
     logger.errorWithContext({
       userId: ctx.from?.id,
       op: 'BOT_REPLY',
