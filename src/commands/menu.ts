@@ -36,7 +36,7 @@ import {
 import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 import {
   MENU,
-  mainKeyboard,
+  mainInlineKeyboard,
   navigationKeyboard,
   settingsKeyboard,
   timeKeyboard,
@@ -98,9 +98,9 @@ export const menuCommand = async (ctx: BotContext) => {
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
   await panelReply(ctx, HOME_TEXT, {
-    reply_markup: mainKeyboard(),
+    reply_markup: mainInlineKeyboard(),
     parse_mode: 'HTML',
-  });
+  }, { navigation: false });
 };
 
 export const returnToTaskList = async (ctx: BotContext) => {
@@ -689,6 +689,17 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       ctx.session.editScene = undefined;
       if (action === 'home') return await menuCommand(ctx);
       if (action === 'back') return await backToTask(ctx);
+      if (action === 'today') return await showTasks(ctx, true);
+      if (action === 'all') return await showTasks(ctx);
+      if (action === 'add') return await showAddPrompt(ctx);
+      if (action === 'now') {
+        newState(ctx);
+        return await showNow(ctx);
+      }
+      if (action === 'chat') {
+        newState(ctx);
+        return await openAssistant(ctx);
+      }
       if (action === 'settings') {
         newState(ctx);
         return await panelReply(ctx, SETTINGS_TEXT, {
