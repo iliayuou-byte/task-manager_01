@@ -14,7 +14,7 @@ export const beginPanel = (ctx: BotContext) => {
   started.delete(ctx);
 };
 
-// An inline notice can sit above the persistent picker without replacing it.
+// Inline notices stay separate from the active message panel.
 export const panelNotice = async (
   ctx: BotContext,
   text: string,
@@ -104,7 +104,7 @@ export const panelReply = async (
     !legacyKeyboardHidden.has(ctx.chat.id)
   ) {
     legacyKeyboardHidden.add(ctx.chat.id);
-    let notice;
+    let notice: { message_id: number } | undefined;
     try {
       notice = await ctx.reply('⌨️ Обновляю кнопки меню…', {
         reply_markup: { remove_keyboard: true },
