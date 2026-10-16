@@ -25,7 +25,7 @@ export const mainInlineKeyboard = () =>
     .text(MENU.settings, 'menu:settings')
     .text(MENU.chat, 'menu:chat')
     .row()
-    .text(MENU.plan, 'menu:calendar');
+    .text(MENU.plan, 'menu:calendar:today');
 
 export const settingsKeyboard = () =>
   new InlineKeyboard()
