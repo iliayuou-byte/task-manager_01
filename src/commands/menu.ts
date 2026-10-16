@@ -978,7 +978,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           throw new Error('Storage did not confirm save');
         await returnToTaskList(ctx);
         return await panelNotice(ctx, `✅ Готово: ${task.name}`, {
-          reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+          reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:tasks'),
         });
       }
       if (action === 'lock') {
