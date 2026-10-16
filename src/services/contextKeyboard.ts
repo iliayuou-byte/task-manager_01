@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Composer } from 'grammy';
+import type { Composer } from 'grammy';
 import type { BotContext } from '../middlewares/session.js';
 
 type Button = { text: string; callback_data?: string };
