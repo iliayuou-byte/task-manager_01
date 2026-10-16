@@ -193,7 +193,7 @@ export const registerSelectedRemoval = (composer: Composer<BotContext>) => {
       const { returnToTaskList } = await import('./menu.js');
       await returnToTaskList(ctx);
       await panelNotice(ctx, `✅ Удалено дел: ${draft.tasks.length}.`, {
-        reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:home'),
+        reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:tasks'),
       });
       const ops = draft.tasks
         .filter((task) => task.calendarEventId)
