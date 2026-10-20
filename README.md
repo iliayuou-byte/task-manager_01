@@ -68,6 +68,10 @@ The AI extraction layer works with a wide range of models, including smaller or 
 | Notifications | Vercel cron | QStash hourly cron |
 | Source | Open | Private |
 
+## Development workspace
+
+Open [task-manager.code-workspace](task-manager.code-workspace) in VS Code for the project map, recommended Biome extension, and one-click lint, build, and test tasks. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the Mac development and Windows server workflow.
+
 ## Quick Start
 
 ```bash
