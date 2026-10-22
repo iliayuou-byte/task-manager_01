@@ -55,13 +55,18 @@ test('TV settings survive Markdown frontmatter storage', () => {
   });
 });
 
-test('ADB reports launch errors even when its exit code is zero', () => {
+test('ADB reports explicit launch errors even when its exit code is zero', () => {
   expect(() =>
     assertFireTvActivityStarted(
       'Error: Activity not started, unable to resolve Intent',
     ),
   ).toThrow('не смог открыть видео');
   expect(() => assertFireTvActivityStarted('Status: ok')).not.toThrow();
+  // Activity Manager can report a readiness timeout after dispatching the
+  // intent, while YouTube still opens successfully on Fire TV.
+  expect(() =>
+    assertFireTvActivityStarted('Status: timeout\nStarting: Intent { ... }'),
+  ).not.toThrow();
 });
 
 const integrationTest = process.platform === 'win32' ? test.skip : test;
@@ -75,7 +80,7 @@ integrationTest(
     const previousLog = process.env.FIRE_TV_TEST_LOG;
     writeFileSync(
       adb,
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIRE_TV_TEST_LOG"\ncase "$*" in\n  *"pm path"*) echo "package:/data/app/youtube.apk" ;;\n  *"-p com.amazon.firetv.youtube"*) echo "Error: Activity not started" ;;\n  *"am start"*) echo "Status: ok" ;;\nesac\n',
+      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIRE_TV_TEST_LOG"\ncase "$*" in\n  *"pm path"*) echo "package:/data/app/youtube.apk" ;;\n  *"-p com.amazon.firetv.youtube"*) echo "Error: Activity not started" ;;\n  *"am start"*) echo "Status: timeout" ;;\nesac\n',
     );
     chmodSync(adb, 0o755);
     process.env.FIRE_TV_ADB_PATH = adb;
@@ -93,6 +98,7 @@ integrationTest(
       expect(commands).toContain(
         'android.intent.action.VIEW -d https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       );
+      expect(commands).not.toContain('am start -W');
     } finally {
       if (previousAdb === undefined) delete process.env.FIRE_TV_ADB_PATH;
       else process.env.FIRE_TV_ADB_PATH = previousAdb;
