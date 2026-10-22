@@ -79,7 +79,7 @@ const runAdb = async (host: string, args: string[]) => {
 
 export const assertFireTvActivityStarted = (output: string) => {
   if (
-    /(?:\bError:|Activity not started|SecurityException|Status:\s*(?:timeout|error))/i.test(
+    /(?:\bError:|Activity not started|SecurityException|unable to resolve Intent|No Activity found)/i.test(
       output,
     )
   )
@@ -91,7 +91,6 @@ const startVideo = async (host: string, url: string, packageName?: string) => {
     'shell',
     'am',
     'start',
-    '-W',
     '-a',
     'android.intent.action.VIEW',
     ...(packageName ? ['-p', packageName] : []),
