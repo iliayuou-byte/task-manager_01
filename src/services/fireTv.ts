@@ -73,6 +73,17 @@ export const volumeIndexForPercent = (
   return Math.round(min + ((max - min) * percent) / 100);
 };
 
+const parseVolumeInfo = (output: string) => {
+  const currentMatch = output.match(/volume is\s+(\d+)/i);
+  const rangeMatch = output.match(/range\s+\[(\d+)\.\.(\d+)\]/i);
+  if (!currentMatch || !rangeMatch) return undefined;
+  const current = Number(currentMatch[1]);
+  const min = Number(rangeMatch[1]);
+  const max = Number(rangeMatch[2]);
+  if (max <= min) return undefined;
+  return { current, min, max };
+};
+
 const adbPath = () => process.env.FIRE_TV_ADB_PATH?.trim() || 'adb';
 const endpoint = (host: string) => `${normalizeFireTvHost(host)}:5555`;
 
@@ -101,10 +112,8 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
     ['shell', 'cmd', 'media_session', 'volume'],
     ['shell', 'media', 'volume'],
   ];
-  let volumeInfo = '';
-  let current = 0;
-  let min = 0;
-  let max = 0;
+  let volumeCommand: string[] | undefined;
+  let volume: ReturnType<typeof parseVolumeInfo>;
   for (const command of volumeCommands) {
     try {
       const result = await runAdb(host, [
@@ -113,22 +122,20 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
         MUSIC_STREAM,
         '--get',
       ]);
-      volumeInfo = `${result.stdout}\n${result.stderr}`;
-      const currentMatch = volumeInfo.match(/volume is\s+(\d+)/i);
-      const rangeMatch = volumeInfo.match(/range\s+\[(\d+)\.\.(\d+)\]/i);
-      if (!currentMatch || !rangeMatch) continue;
-      current = Number(currentMatch[1]);
-      min = Number(rangeMatch[1]);
-      max = Number(rangeMatch[2]);
-      if (max > min) break;
+      volume = parseVolumeInfo(`${result.stdout}\n${result.stderr}`);
+      if (volume) {
+        volumeCommand = command;
+        break;
+      }
     } catch {
       // Try the alternate Android media volume command.
     }
   }
-  if (max <= min) throw new Error('Не удалось определить диапазон громкости Fire TV.');
+  if (!volume || !volumeCommand)
+    throw new Error('Не удалось определить диапазон громкости Fire TV.');
 
-  const target = volumeIndexForPercent(min, max, percent);
-  for (const command of volumeCommands) {
+  const target = volumeIndexForPercent(volume.min, volume.max, percent);
+  for (const command of [volumeCommand, ...volumeCommands]) {
     try {
       await runAdb(host, [
         ...command,
@@ -138,14 +145,23 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
         '--set',
         String(target),
       ]);
-      return;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const check = await runAdb(host, [
+        ...command,
+        '--stream',
+        MUSIC_STREAM,
+        '--get',
+      ]);
+      const updated = parseVolumeInfo(`${check.stdout}\n${check.stderr}`);
+      if (updated?.current === target) return;
+      if (updated) volume = updated;
     } catch {
-      // Try the alternate Android media volume command.
+      // Try another setter before falling back to remote volume key events.
     }
   }
 
-  const key = target > current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
-  const steps = Math.abs(target - current);
+  const key = target > volume.current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
+  const steps = Math.abs(target - volume.current);
   if (steps > 0)
     await runAdb(host, [
       'shell',
