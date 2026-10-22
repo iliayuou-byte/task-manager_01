@@ -78,7 +78,7 @@ test('ADB reports explicit launch errors even when its exit code is zero', () =>
 
 const integrationTest = process.platform === 'win32' ? test.skip : test;
 integrationTest(
-  'wake sets volume to 35%, launches a video, and falls back to an implicit intent',
+  'wake sets volume to 35%, launches a video, and adjusts volume after playback starts',
   async () => {
     const directory = mkdtempSync(join(tmpdir(), 'fire-tv-adb-'));
     const adb = join(directory, 'adb');
@@ -103,12 +103,21 @@ integrationTest(
         'cmd media_session volume --show --stream 3 --set 5',
       );
       expect(commands).toContain(
-        '-p com.amazon.firetv.youtube -d https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-      );
-      expect(commands).toContain(
         'android.intent.action.VIEW -d https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       );
+      expect(commands).toContain('KEYCODE_VOLUME_DOWN');
       expect(commands).not.toContain('am start -W');
+      const commandLines = commands.split(/\r?\n/);
+      const startIndex = commandLines.findIndex(
+        (line) =>
+          line.includes('am start') &&
+          line.includes('android.intent.action.VIEW') &&
+          !line.includes('-p com.amazon.firetv.youtube'),
+      );
+      const lastVolumeAdjustIndex = commandLines.findLastIndex((line) =>
+        line.includes('KEYCODE_VOLUME_DOWN'),
+      );
+      expect(lastVolumeAdjustIndex).toBeGreaterThan(startIndex);
     } finally {
       if (previousAdb === undefined) delete process.env.FIRE_TV_ADB_PATH;
       else process.env.FIRE_TV_ADB_PATH = previousAdb;
