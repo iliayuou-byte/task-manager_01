@@ -114,8 +114,10 @@ integrationTest(
           line.includes('android.intent.action.VIEW') &&
           !line.includes('-p com.amazon.firetv.youtube'),
       );
-      const lastVolumeAdjustIndex = commandLines.findLastIndex((line) =>
-        line.includes('KEYCODE_VOLUME_DOWN'),
+      const lastVolumeAdjustIndex = commandLines.reduce(
+        (last, line, index) =>
+          line.includes('KEYCODE_VOLUME_DOWN') ? index : last,
+        -1,
       );
       expect(lastVolumeAdjustIndex).toBeGreaterThan(startIndex);
     } finally {
