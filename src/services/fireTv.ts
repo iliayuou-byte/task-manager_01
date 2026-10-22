@@ -97,35 +97,62 @@ const runAdb = async (host: string, args: string[]) => {
 };
 
 const setFireTvVolumePercent = async (host: string, percent: number) => {
-  const current = await runAdb(host, [
-    'shell',
-    'cmd',
-    'media_session',
-    'volume',
-    '--stream',
-    MUSIC_STREAM,
-    '--get',
-  ]);
-  const volumeInfo = `${current.stdout}\n${current.stderr}`;
-  const range = volumeInfo.match(/range\s+\[(\d+)\.\.(\d+)\]/i);
-  if (!range)
-    throw new Error('Не удалось определить диапазон громкости Fire TV.');
-  const target = volumeIndexForPercent(
-    Number(range[1]),
-    Number(range[2]),
-    percent,
-  );
-  await runAdb(host, [
-    'shell',
-    'cmd',
-    'media_session',
-    'volume',
-    '--show',
-    '--stream',
-    MUSIC_STREAM,
-    '--set',
-    String(target),
-  ]);
+  const volumeCommands = [
+    ['shell', 'cmd', 'media_session', 'volume'],
+    ['shell', 'media', 'volume'],
+  ];
+  let volumeInfo = '';
+  let current = 0;
+  let min = 0;
+  let max = 0;
+  for (const command of volumeCommands) {
+    try {
+      const result = await runAdb(host, [
+        ...command,
+        '--stream',
+        MUSIC_STREAM,
+        '--get',
+      ]);
+      volumeInfo = `${result.stdout}\n${result.stderr}`;
+      const currentMatch = volumeInfo.match(/volume is\s+(\d+)/i);
+      const rangeMatch = volumeInfo.match(/range\s+\[(\d+)\.\.(\d+)\]/i);
+      if (!currentMatch || !rangeMatch) continue;
+      current = Number(currentMatch[1]);
+      min = Number(rangeMatch[1]);
+      max = Number(rangeMatch[2]);
+      if (max > min) break;
+    } catch {
+      // Try the alternate Android media volume command.
+    }
+  }
+  if (max <= min) throw new Error('Не удалось определить диапазон громкости Fire TV.');
+
+  const target = volumeIndexForPercent(min, max, percent);
+  for (const command of volumeCommands) {
+    try {
+      await runAdb(host, [
+        ...command,
+        '--show',
+        '--stream',
+        MUSIC_STREAM,
+        '--set',
+        String(target),
+      ]);
+      return;
+    } catch {
+      // Try the alternate Android media volume command.
+    }
+  }
+
+  const key = target > current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
+  const steps = Math.abs(target - current);
+  if (steps > 0)
+    await runAdb(host, [
+      'shell',
+      'input',
+      'keyevent',
+      ...Array.from({ length: steps }, () => key),
+    ]);
 };
 
 export const assertFireTvActivityStarted = (output: string) => {
@@ -166,8 +193,8 @@ export const wakeFireTv = async (
   await new Promise((resolve) => setTimeout(resolve, 6000));
   try {
     await setFireTvVolumePercent(host, FIRE_TV_VOLUME_PERCENT);
-  } catch {
-    // Keep video playback available if this Fire OS build lacks shell volume control.
+  } catch (error) {
+    console.warn('[FIRE_TV_VOLUME] Pre-playback volume set failed:', error);
   }
   let youtubeInstalled = false;
   try {
@@ -184,11 +211,20 @@ export const wakeFireTv = async (
   if (youtubeInstalled) {
     try {
       await startVideo(host, watchUrl, 'com.amazon.firetv.youtube');
-      return url;
     } catch {
       // Some Fire OS versions have the app but do not export its URL handler.
+      await startVideo(host, watchUrl);
     }
+  } else {
+    await startVideo(host, watchUrl);
   }
-  await startVideo(host, watchUrl);
+
+  // YouTube can restore the previous audio level when its media session starts.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  try {
+    await setFireTvVolumePercent(host, FIRE_TV_VOLUME_PERCENT);
+  } catch (error) {
+    console.warn('[FIRE_TV_VOLUME] Post-playback volume set failed:', error);
+  }
   return url;
 };
