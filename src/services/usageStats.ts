@@ -5,7 +5,6 @@ import type { MiddlewareFn } from 'grammy';
 import { z } from 'zod';
 import type { BotContext } from '../middlewares/session.js';
 import { MENU } from '../views/menuView.js';
-import { getKeyboardAction } from './contextKeyboard.js';
 import { profileOwner, profileUsers } from './userScope.js';
 
 const rowSchema = z.object({
@@ -171,7 +170,6 @@ export const usageStatsMiddleware = (
         const text = ctx.message?.text?.trim();
         if (
           ctx.callbackQuery ||
-          (text && getKeyboardAction(ctx.chat!.id, text)) ||
           (text &&
             (Object.values(MENU).some((label) => label === text) ||
               /^\/(?:menu|start)(?:@\w+)?(?:\s|$)/.test(text)))
