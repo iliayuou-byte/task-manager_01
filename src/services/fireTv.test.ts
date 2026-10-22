@@ -13,6 +13,7 @@ import {
   normalizeFireTvHost,
   normalizeYoutubeUrl,
   parseFireTvMedia,
+  volumeIndexForPercent,
   wakeFireTv,
 } from './fireTv.js';
 import {
@@ -37,6 +38,12 @@ test('YouTube links normalize to a safe video URL and deduplicate', () => {
     ),
   ).toEqual(['https://youtu.be/dQw4w9WgXcQ']);
   expect(() => normalizeYoutubeUrl('https://example.com/video')).toThrow();
+});
+
+test('volume percentage maps to the device range', () => {
+  expect(volumeIndexForPercent(0, 15, 35)).toBe(5);
+  expect(volumeIndexForPercent(0, 25, 35)).toBe(9);
+  expect(() => volumeIndexForPercent(0, 15, 110)).toThrow();
 });
 
 test('TV settings survive Markdown frontmatter storage', () => {
@@ -71,7 +78,7 @@ test('ADB reports explicit launch errors even when its exit code is zero', () =>
 
 const integrationTest = process.platform === 'win32' ? test.skip : test;
 integrationTest(
-  'wake launches a saved video via the Fire TV app and falls back to an implicit intent',
+  'wake sets volume to 35%, launches a video, and falls back to an implicit intent',
   async () => {
     const directory = mkdtempSync(join(tmpdir(), 'fire-tv-adb-'));
     const adb = join(directory, 'adb');
@@ -80,7 +87,7 @@ integrationTest(
     const previousLog = process.env.FIRE_TV_TEST_LOG;
     writeFileSync(
       adb,
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIRE_TV_TEST_LOG"\ncase "$*" in\n  *"pm path"*) echo "package:/data/app/youtube.apk" ;;\n  *"-p com.amazon.firetv.youtube"*) echo "Error: Activity not started" ;;\n  *"am start"*) echo "Status: timeout" ;;\nesac\n',
+      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIRE_TV_TEST_LOG"\ncase "$*" in\n  *"volume --stream 3 --get"*) echo "[V] volume is 6 in range [0..15]" ;;\n  *"pm path"*) echo "package:/data/app/youtube.apk" ;;\n  *"-p com.amazon.firetv.youtube"*) echo "Error: Activity not started" ;;\n  *"am start"*) echo "Status: timeout" ;;\nesac\n',
     );
     chmodSync(adb, 0o755);
     process.env.FIRE_TV_ADB_PATH = adb;
@@ -92,6 +99,9 @@ integrationTest(
       expect(selected).toBe('https://youtu.be/dQw4w9WgXcQ');
       const commands = readFileSync(log, 'utf8');
       expect(commands).toContain('KEYCODE_WAKEUP');
+      expect(commands).toContain(
+        'cmd media_session volume --show --stream 3 --set 5',
+      );
       expect(commands).toContain(
         '-p com.amazon.firetv.youtube -d https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       );
