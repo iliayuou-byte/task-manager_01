@@ -3,6 +3,8 @@ import { promisify } from 'node:util';
 
 const execFile = promisify(execFileCallback);
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+const FIRE_TV_VOLUME_PERCENT = 35;
+const MUSIC_STREAM = '3';
 
 export const normalizeFireTvHost = (input: string): string => {
   const host = input.trim();
@@ -54,6 +56,23 @@ export const parseFireTvMedia = (input: string): string[] => {
   return [...new Set(lines.map(normalizeYoutubeUrl))];
 };
 
+export const volumeIndexForPercent = (
+  min: number,
+  max: number,
+  percent: number,
+): number => {
+  if (
+    !Number.isInteger(min) ||
+    !Number.isInteger(max) ||
+    max <= min ||
+    !Number.isFinite(percent) ||
+    percent < 0 ||
+    percent > 100
+  )
+    throw new Error('Некорректный диапазон громкости телевизора.');
+  return Math.round(min + ((max - min) * percent) / 100);
+};
+
 const adbPath = () => process.env.FIRE_TV_ADB_PATH?.trim() || 'adb';
 const endpoint = (host: string) => `${normalizeFireTvHost(host)}:5555`;
 
@@ -75,6 +94,38 @@ const runAdb = async (host: string, args: string[]) => {
     windowsHide: true,
     maxBuffer: 1024 * 1024,
   });
+};
+
+const setFireTvVolumePercent = async (host: string, percent: number) => {
+  const current = await runAdb(host, [
+    'shell',
+    'cmd',
+    'media_session',
+    'volume',
+    '--stream',
+    MUSIC_STREAM,
+    '--get',
+  ]);
+  const volumeInfo = `${current.stdout}\n${current.stderr}`;
+  const range = volumeInfo.match(/range\s+\[(\d+)\.\.(\d+)\]/i);
+  if (!range)
+    throw new Error('Не удалось определить диапазон громкости Fire TV.');
+  const target = volumeIndexForPercent(
+    Number(range[1]),
+    Number(range[2]),
+    percent,
+  );
+  await runAdb(host, [
+    'shell',
+    'cmd',
+    'media_session',
+    'volume',
+    '--show',
+    '--stream',
+    MUSIC_STREAM,
+    '--set',
+    String(target),
+  ]);
 };
 
 export const assertFireTvActivityStarted = (output: string) => {
@@ -113,6 +164,11 @@ export const wakeFireTv = async (
   const watchUrl = `https://www.youtube.com/watch?v=${id}`;
   // Fire OS may still be restoring the foreground app after KEYCODE_WAKEUP.
   await new Promise((resolve) => setTimeout(resolve, 6000));
+  try {
+    await setFireTvVolumePercent(host, FIRE_TV_VOLUME_PERCENT);
+  } catch {
+    // Keep video playback available if this Fire OS build lacks shell volume control.
+  }
   let youtubeInstalled = false;
   try {
     const packages = await runAdb(host, [
