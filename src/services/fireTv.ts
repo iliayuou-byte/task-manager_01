@@ -113,7 +113,7 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
     ['shell', 'media', 'volume'],
   ];
   let volumeCommand: string[] | undefined;
-  let volume: ReturnType<typeof parseVolumeInfo>;
+  let volume: ReturnType<typeof parseVolumeInfo> = undefined;
   for (const command of volumeCommands) {
     try {
       const result = await runAdb(host, [
@@ -160,7 +160,8 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
     }
   }
 
-  const key = target > volume.current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
+  const key =
+    target > volume.current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
   const steps = Math.abs(target - volume.current);
   if (steps > 0)
     await runAdb(host, [
