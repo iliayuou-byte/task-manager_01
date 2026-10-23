@@ -238,7 +238,13 @@ const startVideo = async (host: string, url: string, packageName?: string) => {
     '-d',
     url,
   ];
-  const result = await runAdb(host, args);
+  let result: Awaited<ReturnType<typeof runAdb>>;
+  try {
+    result = await runAdb(host, args);
+  } catch (error) {
+    if (await isYoutubeForeground(host)) return;
+    throw error;
+  }
   try {
     assertFireTvActivityStarted(result.stdout + '\n' + result.stderr);
   } catch (error) {
