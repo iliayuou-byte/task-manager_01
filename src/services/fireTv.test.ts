@@ -50,7 +50,7 @@ test('parses Fire TV music volume from dumpsys audio', () => {
     '   Max: 15',
     '   Current: 6 (speaker): 6',
     '- STREAM_RING:',
-  ].join('\\n');
+  ].join('\n');
   expect(parseFireTvAudioDumpVolume(output)).toEqual({
     current: 6,
     min: 0,
