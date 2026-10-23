@@ -11,8 +11,8 @@ import { join } from 'node:path';
 import {
   assertFireTvActivityStarted,
   normalizeFireTvHost,
-  parseFireTvAudioDumpVolume,
   normalizeYoutubeUrl,
+  parseFireTvAudioDumpVolume,
   parseFireTvMedia,
   volumeIndexForPercent,
   wakeFireTv,
