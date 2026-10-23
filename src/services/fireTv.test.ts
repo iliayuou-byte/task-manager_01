@@ -59,8 +59,8 @@ test('parses Fire TV music volume from dumpsys audio', () => {
 });
 
 test('volume percentage maps to the device range', () => {
-  expect(volumeIndexForPercent(0, 15, 35)).toBe(5);
-  expect(volumeIndexForPercent(0, 25, 35)).toBe(9);
+  expect(volumeIndexForPercent(0, 15, 25)).toBe(4);
+  expect(volumeIndexForPercent(0, 25, 25)).toBe(6);
   expect(() => volumeIndexForPercent(0, 15, 110)).toThrow();
 });
 
@@ -96,7 +96,7 @@ test('ADB reports explicit launch errors even when its exit code is zero', () =>
 
 const integrationTest = process.platform === 'win32' ? test.skip : test;
 integrationTest(
-  'wake sets volume to 35%, launches a video, and adjusts volume after playback starts',
+  'wake sets volume to 25%, launches a video, and adjusts volume after playback starts',
   async () => {
     const directory = mkdtempSync(join(tmpdir(), 'fire-tv-adb-'));
     const adb = join(directory, 'adb');
@@ -118,7 +118,7 @@ integrationTest(
       const commands = readFileSync(log, 'utf8');
       expect(commands).toContain('KEYCODE_WAKEUP');
       expect(commands).toContain(
-        'cmd media_session volume --show --stream 3 --set 5',
+        'cmd media_session volume --show --stream 3 --set 4',
       );
       expect(commands).toContain(
         'android.intent.action.VIEW -d https://www.youtube.com/watch?v=dQw4w9WgXcQ',
