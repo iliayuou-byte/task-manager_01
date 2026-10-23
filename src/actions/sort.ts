@@ -3,6 +3,7 @@ import { Command } from '../core/config.js';
 import logger from '../core/logger.js';
 import { Priority, type Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 
@@ -58,7 +59,7 @@ export const registerSortAction = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
 
     if (action === 'cancel') {
-      await ctx.editMessageText('❌ Sort cancelled.');
+      await panelReply(ctx, '❌ Sort cancelled.');
       return;
     }
 
@@ -81,11 +82,12 @@ export const registerSortAction = (composer: Composer<BotContext>) => {
       taskData.uncompleted = sortedTasks;
       await saveTasks(taskData, metadata);
 
-      await ctx.editMessageText(
+      await panelReply(
+        ctx,
         `✅ Tasks sorted by ${sortLabel}. (${sortedTasks.length} tasks)`,
       );
     } catch (error) {
-      await ctx.editMessageText('❌ Failed to sort tasks. Please try again.');
+      await panelReply(ctx, '❌ Failed to sort tasks. Please try again.');
       logger.errorWithContext({ userId, op: Command.SORT, error });
     }
   });

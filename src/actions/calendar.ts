@@ -4,6 +4,7 @@ import {
   clearPendingCalendarOps,
   getPendingCalendarOps,
 } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 
 const getCalendarService = async () => {
   const { googleCalendarService } = await import(
@@ -28,23 +29,12 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
 
     if (!ops || ops.length === 0) {
-      await ctx.editMessageReplyMarkup(undefined);
+      await panelReply(ctx, 'Операция календаря больше недоступна.');
       return;
     }
-
-    try {
-      await ctx.editMessageReplyMarkup(undefined);
-    } catch (e) {
-      if (e instanceof Error) {
-        logger.debugWithContext({
-          message: `Failed to remove keyboard: ${e.message}`,
-        });
-      }
-    }
-
     if (!isYes) {
-      await ctx.deleteMessage();
       clearPendingCalendarOps(userId);
+      await panelReply(ctx, 'Изменение календаря отменено.');
       return;
     }
 
@@ -53,7 +43,8 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
       const { metadata, taskData } = await queryTasks();
 
       if (!metadata.timezone) {
-        await ctx.reply(
+        await panelReply(
+          ctx,
           '❌ Timezone not set. Please use /settimezone then click Yes again.',
         );
         return;
@@ -148,13 +139,14 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
         await saveTasks(taskData, metadata);
       }
 
-      await ctx.reply(
+      await panelReply(
+        ctx,
         `✅ Processed ${successCount} calendar operations.` +
           (failCount > 0 ? ` (Failed: ${failCount})` : ''),
       );
     } catch (error) {
       logger.errorWithContext({ userId, op: 'CALENDAR_ACTION', error });
-      await ctx.reply('❌ An error occurred.');
+      await panelReply(ctx, '❌ An error occurred.');
     }
 
     clearPendingCalendarOps(userId);
