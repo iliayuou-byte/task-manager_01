@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 
 const execFile = promisify(execFileCallback);
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
-const FIRE_TV_VOLUME_PERCENT = 35;
+const FIRE_TV_VOLUME_PERCENT = 25;
 const MUSIC_STREAM = '3';
 
 export const normalizeFireTvHost = (input: string): string => {
