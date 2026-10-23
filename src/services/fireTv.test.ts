@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import {
   assertFireTvActivityStarted,
   normalizeFireTvHost,
+  parseFireTvAudioDumpVolume,
   normalizeYoutubeUrl,
   parseFireTvMedia,
   volumeIndexForPercent,
@@ -38,6 +39,23 @@ test('YouTube links normalize to a safe video URL and deduplicate', () => {
     ),
   ).toEqual(['https://youtu.be/dQw4w9WgXcQ']);
   expect(() => normalizeYoutubeUrl('https://example.com/video')).toThrow();
+});
+
+test('parses Fire TV music volume from dumpsys audio', () => {
+  const output = [
+    'Audio service state:',
+    '- STREAM_MUSIC:',
+    '   Muted: false',
+    '   Min: 0',
+    '   Max: 15',
+    '   Current: 6 (speaker): 6',
+    '- STREAM_RING:',
+  ].join('\\n');
+  expect(parseFireTvAudioDumpVolume(output)).toEqual({
+    current: 6,
+    min: 0,
+    max: 15,
+  });
 });
 
 test('volume percentage maps to the device range', () => {
