@@ -91,7 +91,7 @@ const parseVolumeInfo = (output: string) => {
   return { current, min, max };
 };
 
-const parseAudioDumpVolume = (output: string) => {
+export const parseFireTvAudioDumpVolume = (output: string) => {
   const lines = output.split(/\r?\n/);
   const start = lines.findIndex((line) => /\bSTREAM_MUSIC\b/.test(line));
   if (start < 0) return undefined;
@@ -146,7 +146,7 @@ const readFireTvVolume = async (host: string) => {
   try {
     const result = await runAdb(host, ['shell', 'dumpsys', 'audio']);
     const output = result.stdout + '\n' + result.stderr;
-    const volume = parseAudioDumpVolume(output);
+    const volume = parseFireTvAudioDumpVolume(output);
     if (volume) return { volume, diagnostics };
     diagnostics.push(output.slice(0, 1200).trim());
   } catch (error) {
