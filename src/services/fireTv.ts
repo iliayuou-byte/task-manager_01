@@ -74,14 +74,28 @@ export const volumeIndexForPercent = (
 };
 
 const parseVolumeInfo = (output: string) => {
-  const currentMatch = output.match(/volume is\s+(\d+)/i);
+  const volumeMatch = output.match(/volume is\s+(\d+)/i);
+  const currentLine = output.match(
+    /Current:\s*(\d+)(?:\s+\([^)]*\):\s*(\d+))?/i,
+  );
   const rangeMatch = output.match(/range\s+\[(\d+)\.\.(\d+)\]/i);
-  if (!currentMatch || !rangeMatch) return undefined;
-  const current = Number(currentMatch[1]);
-  const min = Number(rangeMatch[1]);
-  const max = Number(rangeMatch[2]);
-  if (max <= min) return undefined;
+  const minMatch = output.match(/\bMin:\s*(\d+)/i);
+  const maxMatch = output.match(/\bMax:\s*(\d+)/i);
+  const current = volumeMatch
+    ? Number(volumeMatch[1])
+    : Number(currentLine?.[2] ?? currentLine?.[1]);
+  const min = Number(rangeMatch?.[1] ?? minMatch?.[1]);
+  const max = Number(rangeMatch?.[2] ?? maxMatch?.[1]);
+  if (![current, min, max].every(Number.isFinite) || max <= min)
+    return undefined;
   return { current, min, max };
+};
+
+const parseAudioDumpVolume = (output: string) => {
+  const lines = output.split(/\r?\n/);
+  const start = lines.findIndex((line) => /\bSTREAM_MUSIC\b/.test(line));
+  if (start < 0) return undefined;
+  return parseVolumeInfo(lines.slice(start, start + 20).join('\n'));
 };
 
 const adbPath = () => process.env.FIRE_TV_ADB_PATH?.trim() || 'adb';
@@ -107,13 +121,12 @@ const runAdb = async (host: string, args: string[]) => {
   });
 };
 
-const setFireTvVolumePercent = async (host: string, percent: number) => {
+const readFireTvVolume = async (host: string) => {
   const volumeCommands = [
     ['shell', 'cmd', 'media_session', 'volume'],
     ['shell', 'media', 'volume'],
   ];
-  let volumeCommand: string[] | undefined;
-  let volume: ReturnType<typeof parseVolumeInfo> = undefined;
+  const diagnostics: string[] = [];
   for (const command of volumeCommands) {
     try {
       const result = await runAdb(host, [
@@ -122,20 +135,42 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
         MUSIC_STREAM,
         '--get',
       ]);
-      volume = parseVolumeInfo(`${result.stdout}\n${result.stderr}`);
-      if (volume) {
-        volumeCommand = command;
-        break;
-      }
-    } catch {
-      // Try the alternate Android media volume command.
+      const output = result.stdout + '\n' + result.stderr;
+      const volume = parseVolumeInfo(output);
+      if (volume) return { volume, command };
+      diagnostics.push(output.trim());
+    } catch (error) {
+      diagnostics.push(error instanceof Error ? error.message : String(error));
     }
   }
-  if (!volume || !volumeCommand)
-    throw new Error('Не удалось определить диапазон громкости Fire TV.');
+  try {
+    const result = await runAdb(host, ['shell', 'dumpsys', 'audio']);
+    const output = result.stdout + '\n' + result.stderr;
+    const volume = parseAudioDumpVolume(output);
+    if (volume) return { volume, diagnostics };
+    diagnostics.push(output.slice(0, 1200).trim());
+  } catch (error) {
+    diagnostics.push(error instanceof Error ? error.message : String(error));
+  }
+  console.warn(
+    '[FIRE_TV_VOLUME] Could not read STREAM_MUSIC volume:',
+    diagnostics.join(' | ').slice(0, 2500),
+  );
+  return undefined;
+};
 
-  const target = volumeIndexForPercent(volume.min, volume.max, percent);
-  for (const command of [volumeCommand, ...volumeCommands]) {
+const setFireTvVolumePercent = async (host: string, percent: number) => {
+  let state = await readFireTvVolume(host);
+  if (!state) throw new Error('Не удалось определить диапазон громкости Fire TV.');
+
+  const { min, max } = state.volume;
+  const target = volumeIndexForPercent(min, max, percent);
+  const volumeCommands = [
+    ...('command' in state ? [state.command] : []),
+    ['shell', 'cmd', 'media_session', 'volume'],
+    ['shell', 'media', 'volume'],
+  ];
+  for (const command of volumeCommands) {
     try {
       await runAdb(host, [
         ...command,
@@ -146,23 +181,17 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
         String(target),
       ]);
       await new Promise((resolve) => setTimeout(resolve, 300));
-      const check = await runAdb(host, [
-        ...command,
-        '--stream',
-        MUSIC_STREAM,
-        '--get',
-      ]);
-      const updated = parseVolumeInfo(`${check.stdout}\n${check.stderr}`);
-      if (updated?.current === target) return;
-      if (updated) volume = updated;
+      const check = await readFireTvVolume(host);
+      if (check?.volume.current === target) return;
+      if (check) state = check;
     } catch {
       // Try another setter before falling back to remote volume key events.
     }
   }
 
   const key =
-    target > volume.current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
-  const steps = Math.abs(target - volume.current);
+    target > state.volume.current ? 'KEYCODE_VOLUME_UP' : 'KEYCODE_VOLUME_DOWN';
+  const steps = Math.abs(target - state.volume.current);
   if (steps > 0)
     await runAdb(host, [
       'shell',
@@ -174,11 +203,28 @@ const setFireTvVolumePercent = async (host: string, percent: number) => {
 
 export const assertFireTvActivityStarted = (output: string) => {
   if (
-    /(?:\bError:|Activity not started|SecurityException|unable to resolve Intent|No Activity found)/i.test(
+    /(?:Activity not started|SecurityException|unable to resolve Intent|No Activity found)/i.test(
       output,
     )
   )
     throw new Error('Телевизор не смог открыть видео через ADB.');
+};
+
+const isYoutubeForeground = async (host: string) => {
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  try {
+    const result = await runAdb(host, [
+      'shell',
+      'dumpsys',
+      'activity',
+      'activities',
+    ]);
+    return /com\.amazon\.firetv\.youtube|com\.google\.android\.youtube\.tv/i.test(
+      result.stdout,
+    );
+  } catch {
+    return false;
+  }
 };
 
 const startVideo = async (host: string, url: string, packageName?: string) => {
@@ -193,7 +239,12 @@ const startVideo = async (host: string, url: string, packageName?: string) => {
     url,
   ];
   const result = await runAdb(host, args);
-  assertFireTvActivityStarted(`${result.stdout}\n${result.stderr}`);
+  try {
+    assertFireTvActivityStarted(result.stdout + '\n' + result.stderr);
+  } catch (error) {
+    if (await isYoutubeForeground(host)) return;
+    throw error;
+  }
 };
 
 export const wakeFireTv = async (
