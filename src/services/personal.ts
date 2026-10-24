@@ -105,7 +105,17 @@ export const setPriorities = (day: DayPlan, ids: string[], tasks: Task[]) => {
 };
 export const areaOf = (task: Task): Area =>
   AREAS.find((area) =>
-    task.tags.some((tag) => tag.replace(/^#/, '') === area),
+    task.tags.some((tag) => {
+      const value = tag.replace(/^#/, '').toLowerCase();
+      const aliases: Record<string, Area> = {
+        учёба: 'study',
+        учеба: 'study',
+        проекты: 'project',
+        зал: 'gym',
+        общение: 'social',
+      };
+      return (aliases[value] ?? value) === area;
+    }),
   ) ?? 'life';
 const completionDate = (task: Task, timezone: string): string | undefined => {
   if (task.completedAt && !Number.isNaN(Date.parse(task.completedAt))) {

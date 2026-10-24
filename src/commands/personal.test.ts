@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'bun:test';
 import { Bot, session } from 'grammy';
-import type { TaskData } from '../core/types.js';
+import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext, SessionData } from '../middlewares/session.js';
 import { createPersonalState, localDate } from '../services/personal.js';
 import { PersonalStore } from '../services/personalStore.js';
 import { createPersonalComposer } from './personal.js';
 
-const fixture = (saveResult: boolean | Error = true) => {
+const fixture = (
+  saveResult: boolean | Error = true,
+  capturePlainText = true,
+) => {
   let state = createPersonalState(1);
   let tasks: TaskData = { completed: [], uncompleted: [] };
   let revision = 0;
   const messages: string[] = [];
   const documents: string[] = [];
+  const passed: string[] = [];
+  const metadata: Metadata = { timezone: 'Europe/Berlin' };
   const store = new PersonalStore(1, {
     read: async () => ({
       state: structuredClone(state),
@@ -71,8 +76,9 @@ const fixture = (saveResult: boolean | Error = true) => {
       ownerId: 1,
       store: async () => store,
       enabled: () => true,
+      capturePlainText,
       query: async () => ({
-        metadata: { timezone: 'Europe/Berlin' },
+        metadata,
         taskData: structuredClone(tasks),
       }),
       save: async (next) => {
@@ -83,6 +89,9 @@ const fixture = (saveResult: boolean | Error = true) => {
       },
     }),
   );
+  bot.on('message:text', (ctx) => {
+    passed.push(ctx.message.text);
+  });
   let updateId = 0;
   const message = (text: string, id = 1, group = false) =>
     bot.handleUpdate({
@@ -123,10 +132,48 @@ const fixture = (saveResult: boolean | Error = true) => {
         },
       },
     });
-  return { store, messages, documents, message, callback, tasks: () => tasks };
+  return {
+    store,
+    messages,
+    documents,
+    passed,
+    metadata,
+    message,
+    callback,
+    tasks: () => tasks,
+  };
 };
 
 describe('Personal Telegram workflow', () => {
+  it('preserves existing text and reminder routing when integrated with Copilot', async () => {
+    const f = fixture(true, false);
+    await f.message('Обсудить проект');
+    await f.message('/reminders');
+    expect(f.passed).toEqual(['Обсудить проект', '/reminders']);
+    expect(f.tasks().uncompleted).toHaveLength(0);
+    await f.message('/inbox Открыть конспект #study');
+    await f.message('/personalreminders on');
+    expect(f.tasks().uncompleted[0].name).toBe('Открыть конспект');
+    expect((await f.store.read()).reminders.enabled).toBe(true);
+    expect(f.passed).toHaveLength(2);
+  });
+  it('includes imported classes in the morning plan without saving them as tasks', async () => {
+    const f = fixture(true, false);
+    f.metadata.calendar_timezone = 'Europe/Berlin';
+    f.metadata.calendar_events = JSON.stringify([
+      {
+        uid: 'class-1',
+        date: localDate(new Date(), 'Europe/Berlin'),
+        start: '23:59',
+        end: '23:59',
+        title: 'Physics class',
+      },
+    ]);
+    await f.message('/morning');
+    expect(f.messages[f.messages.length - 1]).toContain('Physics class');
+    expect(f.tasks().uncompleted).toHaveLength(0);
+    expect(f.metadata.calendar_events).toContain('class-1');
+  });
   it('initializes legacy task IDs before enabling reminders', async () => {
     const f = fixture();
     f.tasks().uncompleted.push({
@@ -136,7 +183,7 @@ describe('Personal Telegram workflow', () => {
       date: '2026-10-25',
       time: '12:30',
     });
-    await f.message('/reminders on');
+    await f.message('/personalreminders on');
     expect(f.tasks().uncompleted[0].id).toBeDefined();
     expect((await f.store.read()).reminders.enabled).toBe(true);
   });
@@ -153,7 +200,7 @@ describe('Personal Telegram workflow', () => {
   it('does not confirm or enable reminders when saving legacy IDs fails', async () => {
     const f = fixture(false);
     f.tasks().uncompleted.push({ name: 'Legacy', completed: false, tags: [] });
-    await f.message('/reminders on');
+    await f.message('/personalreminders on');
     expect((await f.store.read()).reminders.enabled).toBe(false);
     expect(f.tasks().uncompleted[0].id).toBeUndefined();
     await f.message('/inbox Failed');
@@ -224,7 +271,7 @@ describe('Personal Telegram workflow', () => {
     await f.message('/inbox Read #study');
     await f.callback(`pf:2020-01-01:${f.tasks().uncompleted[0].id}`);
     await f.message('/evening 9 | a | b | c');
-    await f.message('/reminders 99:00 21:30 18:00');
+    await f.message('/personalreminders 99:00 21:30 18:00');
     const state = await f.store.read();
     expect(state.days).toEqual({});
     expect(state.reminders.morning).toBe('09:00');

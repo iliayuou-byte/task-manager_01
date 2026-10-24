@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { calendar, type calendar_v3 } from '@googleapis/calendar';
@@ -6,10 +7,20 @@ import { GoogleAuth } from 'google-auth-library';
 import { IS_PROD } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
+import type { ScheduleEvent } from '../services/icsCalendar.js';
+import { canUseOwnerCalendar } from '../services/userScope.js';
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 
 const calendarId = process.env.GOOGLE_CALENDAR_ID;
+const SCHEDULE_MARKER = 'task_manager_schedule=1';
+
+export const scheduleEventId = (event: ScheduleEvent): string =>
+  `tm${createHash('sha256')
+    .update(`${event.uid}\0${event.date}\0${event.start}`)
+    .digest('hex')
+    .slice(0, 40)}`;
+
 class GoogleCalendarService {
   private calendar: calendar_v3.Calendar | null = null;
 
@@ -89,7 +100,102 @@ class GoogleCalendarService {
     }
   }
 
+  isConfigured(): boolean {
+    return !!this.calendar && !!calendarId;
+  }
+
+  async syncSchedule(events: readonly ScheduleEvent[], timezone: string) {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
+    if (!this.calendar || !calendarId)
+      throw new Error('Google Calendar is not configured');
+
+    const existing = new Set<string>();
+    let pageToken: string | undefined;
+    do {
+      const { data } = await this.calendar.events.list({
+        calendarId,
+        privateExtendedProperty: [SCHEDULE_MARKER],
+        maxResults: 2500,
+        pageToken,
+      });
+      for (const event of data.items || [])
+        if (event.id) existing.add(event.id);
+      pageToken = data.nextPageToken || undefined;
+    } while (pageToken);
+
+    const wanted = new Set<string>();
+    let created = 0;
+    let updated = 0;
+    for (const event of events) {
+      const id = scheduleEventId(event);
+      if (wanted.has(id)) continue;
+      wanted.add(id);
+      const body: calendar_v3.Schema$Event = {
+        id,
+        summary: event.title,
+        location: event.location,
+        start: {
+          dateTime: fromZonedTime(
+            `${event.date}T${event.start}:00`,
+            timezone,
+          ).toISOString(),
+          timeZone: timezone,
+        },
+        end: {
+          dateTime: fromZonedTime(
+            `${event.date}T${event.end}:00`,
+            timezone,
+          ).toISOString(),
+          timeZone: timezone,
+        },
+        extendedProperties: { private: { task_manager_schedule: '1' } },
+      };
+      if (existing.has(id)) {
+        await this.calendar.events.update({
+          calendarId,
+          eventId: id,
+          requestBody: body,
+        });
+        updated++;
+        continue;
+      }
+      try {
+        await this.calendar.events.insert({ calendarId, requestBody: body });
+        created++;
+      } catch (error) {
+        if (!isCalendarStatus(error, 409)) throw error;
+        const { data } = await this.calendar.events.get({
+          calendarId,
+          eventId: id,
+        });
+        if (data.extendedProperties?.private?.task_manager_schedule !== '1')
+          throw new Error('Calendar event ID collision');
+        await this.calendar.events.update({
+          calendarId,
+          eventId: id,
+          requestBody: body,
+        });
+        updated++;
+      }
+    }
+
+    let removed = 0;
+    for (const id of existing) {
+      if (wanted.has(id)) continue;
+      try {
+        await this.calendar.events.delete({ calendarId, eventId: id });
+        removed++;
+      } catch (error) {
+        if (!isCalendarStatus(error, 404)) throw error;
+      }
+    }
+    return { created, updated, removed };
+  }
+
   async createEvent(task: Task, timezone: string): Promise<string | undefined> {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
     if (!this.calendar) {
       logger.warnWithContext({
         message: 'Google Calendar not configured, skipping event creation',
@@ -138,6 +244,8 @@ class GoogleCalendarService {
     task: Task,
     timezone: string,
   ): Promise<string | undefined> {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
     if (!this.calendar) {
       return;
     }
@@ -173,6 +281,8 @@ class GoogleCalendarService {
   }
 
   async deleteEvent(eventId: string): Promise<boolean> {
+    if (!canUseOwnerCalendar())
+      throw new Error('Calendar is only configured for the bot owner');
     if (!this.calendar) {
       return false;
     }
@@ -201,6 +311,12 @@ class GoogleCalendarService {
     }
   }
 }
+
+const isCalendarStatus = (error: unknown, status: number): boolean =>
+  !!error &&
+  typeof error === 'object' &&
+  'code' in error &&
+  Number(error.code) === status;
 
 const getCalendarEventObj = (task: Task, timezone: string) => {
   const startDateTimeStr = `${task.date}T${task.time}:00`;

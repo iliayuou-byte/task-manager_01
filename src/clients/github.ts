@@ -1,6 +1,7 @@
 import type { Octokit } from '@octokit/rest';
 import { TaskRevisionConflictError } from '../core/error.js';
 import logger from '../core/logger.js';
+import { profileFilePath } from '../services/userScope.js';
 
 const getErrorStatus = (error: unknown): number | undefined =>
   error instanceof Error && 'status' in error
@@ -56,7 +57,8 @@ export const getGitHubFileInfo = (): GitHubFileInfo => {
     throw new Error('FILE_PATH is not configured');
   }
 
-  return parseGitHubPath(path);
+  const info = parseGitHubPath(path);
+  return { ...info, filePath: profileFilePath(info.filePath) };
 };
 
 export const fetchFileSnapshot = async (): Promise<{
@@ -104,16 +106,14 @@ export const fetchFileSnapshot = async (): Promise<{
   }
 };
 
-export const fetchFileContent = async (): Promise<string> =>
-  (await fetchFileSnapshot()).content;
-
 export const saveFileContent = async (
   content: string,
   commitMessage: string,
   retries = 3,
-  expectedSha?: string,
+  snapshot?: { storage_revision?: string },
 ): Promise<boolean> => {
   let attempt = 0;
+  const expectedSha = snapshot?.storage_revision;
   const { owner, repo, branch, filePath } = getGitHubFileInfo();
   while (attempt < retries) {
     try {
@@ -156,7 +156,7 @@ export const saveFileContent = async (
         }
 
       // Create or update file on GitHub
-      await octokit.repos.createOrUpdateFileContents({
+      const written = await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
         path: filePath,
@@ -166,6 +166,12 @@ export const saveFileContent = async (
         branch,
       });
 
+      if (snapshot) {
+        const revision = written.data.content?.sha;
+        if (!revision)
+          throw new Error('GitHub did not return the saved file revision');
+        snapshot.storage_revision = revision;
+      }
       logger.infoWithContext({ message: `File saved to GitHub: ${filePath}` });
       return true;
     } catch (error) {

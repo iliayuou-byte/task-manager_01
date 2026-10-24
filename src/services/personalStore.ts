@@ -1,12 +1,12 @@
 import path from 'node:path';
 import type { Octokit } from '@octokit/rest';
 import { getGitHubFileInfo, getOctokit } from '../clients/github.js';
-import { ALLOWED_USERS } from '../core/config.js';
 import {
   createPersonalState,
   type PersonalState,
   personalStateSchema,
 } from './personal.js';
+import { profileOwner } from './userScope.js';
 
 export interface PersonalBackend {
   read(): Promise<{ state: unknown; revision?: string }>;
@@ -127,9 +127,9 @@ export const getPersonalStore = async (): Promise<PersonalStore> => {
     );
   if ((process.env.STORAGE_PROVIDER ?? 'github').toLowerCase() !== 'github')
     throw new Error('Личная система пока поддерживает хранилище GitHub.');
-  const ownerId = ALLOWED_USERS[0];
-  if (!Number.isSafeInteger(ownerId) || ownerId <= 0)
-    throw new Error('Укажи владельца первым в TELEGRAM_BOT_ALLOWLIST.');
+  const ownerId = profileOwner();
+  if (ownerId === undefined || !Number.isSafeInteger(ownerId) || ownerId <= 0)
+    throw new Error('Укажи владельца в TELEGRAM_BOT_ALLOWLIST и BOT_OWNER_ID.');
   const info = getGitHubFileInfo();
   const filePath = path.posix.join(
     path.posix.dirname(info.filePath),

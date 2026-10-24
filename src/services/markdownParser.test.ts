@@ -5,6 +5,28 @@ import {
 } from './markdownParser.js';
 
 describe('Personal fields in Markdown', () => {
+  it('keeps tasks whose titles contain table header words and every following row', () => {
+    const names = ['Before', 'Review Completed Tasks', 'After'];
+    const content = serializeTaskMarkdown(
+      {
+        uncompleted: names.map((name, i) => ({
+          name,
+          id: `task-${i}`,
+          completed: false,
+          tags: ['study'],
+        })),
+        completed: [],
+      },
+      { timezone: 'Europe/Berlin' },
+    );
+    const parsed = deserializeTaskMarkdown(content);
+    expect(parsed.taskData.uncompleted.map((task) => task.name)).toEqual(names);
+    expect(
+      deserializeTaskMarkdown(
+        serializeTaskMarkdown(parsed.taskData, parsed.metadata),
+      ).taskData,
+    ).toEqual(parsed.taskData);
+  });
   it('reads a legacy table and preserves log, ID and completion timestamp on roundtrip', () => {
     const legacy =
       '| Completed | Task | Date | Time | Duration | Priority | Tags | Description | Link | CalendarEventId | Log | RecurrenceRule |\n| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n| [x] | Read | 2026-10-01 | | | | #study | | | | Completed 2026-10-24 12:00:00 (Europe/Berlin) | |';

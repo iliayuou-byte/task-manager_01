@@ -1,8 +1,11 @@
+import { formatInTimeZone } from 'date-fns-tz';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
-import { getTasksByDay, logAndReplyError } from '../utils/index.js';
-import { getTodaysTasksMessage } from '../views/generalView.js';
+import { rememberTaskNumbers } from '../services/taskNumbers.js';
+import { logAndReplyError } from '../utils/index.js';
+import { matrixLines, splitMessages } from '../views/eisenhowerView.js';
 
 export const todayCommand = async (ctx: BotContext) => {
   try {
@@ -10,25 +13,31 @@ export const todayCommand = async (ctx: BotContext) => {
     const { taskData, metadata } = await queryTasks();
 
     if (!metadata.timezone) {
-      return ctx.reply(
+      return panelReply(
+        ctx,
         '❌ Timezone not set. Please set your timezone first using /settimezone command.',
       );
     }
 
     const today = new Date();
-    const todaysTasks = getTasksByDay(
-      taskData.uncompleted,
-      today,
-      metadata.timezone,
+    const date = formatInTimeZone(today, metadata.timezone, 'yyyy-MM-dd');
+    const todaysTasks = taskData.uncompleted.filter(
+      (task) => !task.date || task.date <= date,
     );
 
     if (todaysTasks.length === 0) {
-      return ctx.reply('📭 No tasks for today!');
+      return panelReply(ctx, '👌 На сегодня пусто. Редкий случай — пользуйся.');
     }
 
-    const response = getTodaysTasksMessage(todaysTasks, metadata.timezone!);
-
-    ctx.reply(response, { parse_mode: 'MarkdownV2' });
+    for (const message of splitMessages([
+      `📋 Сегодня · ${date}`,
+      '',
+      ...matrixLines(todaysTasks),
+    ])) {
+      await panelReply(ctx, message);
+    }
+    if (ctx.from && ctx.chat)
+      rememberTaskNumbers(ctx.from.id, ctx.chat.id, todaysTasks);
   } catch (error) {
     logAndReplyError(
       ctx,

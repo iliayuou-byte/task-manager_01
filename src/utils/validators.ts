@@ -101,6 +101,18 @@ export const FIELD_CONFIGS: Record<Field, FieldConfig> = {
       typeof value === 'string' && !Number.isNaN(Date.parse(value)),
     errorMessage: 'Invalid completion timestamp',
   },
+  priorityLocked: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'PriorityLocked must be boolean',
+  },
+  important: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'Important must be boolean',
+  },
+  urgent: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'Urgent must be boolean',
+  },
   completed: {
     validator: validators.completed,
     errorMessage: 'Completed must be a boolean value',

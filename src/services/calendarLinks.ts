@@ -26,11 +26,11 @@ export const persistCalendarLinks = async (
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const { metadata, taskData } = await query();
+      const tasks = [...taskData.uncompleted, ...taskData.completed];
       let changed = false;
       for (const link of links) {
-        const task = [...taskData.uncompleted, ...taskData.completed].find(
-          (task) =>
-            link.taskId ? task.id === link.taskId : task.name === link.taskName,
+        const task = tasks.find((task) =>
+          link.taskId ? task.id === link.taskId : task.name === link.taskName,
         );
         if (
           !task ||

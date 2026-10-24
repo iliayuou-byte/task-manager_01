@@ -9,12 +9,19 @@ export type { CalendarOpSession } from '../core/types.js';
 export interface EditSceneState {
   active: boolean;
   taskIdx: number;
+  fingerprint?: string;
   field?: EditableField;
 }
 
 // --- Session types ---
 
 export interface SessionData {
+  assistant?: {
+    id: string;
+    expires: number;
+    busy?: boolean;
+    suggestion?: { mode: 'add' | 'remove'; input: string };
+  };
   editScene?: EditSceneState;
   awaitingAdd?: boolean;
 }

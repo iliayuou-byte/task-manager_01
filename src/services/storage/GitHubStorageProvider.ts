@@ -72,12 +72,7 @@ export class GitHubStorageProvider implements IStorageProvider {
     metadata.last_synced = now.toISOString();
     const content = serializeTaskMarkdown(tasks, metadata);
     const commitMessage = `[bot] update - ${now.toISOString()}`;
-    return saveFileContent(
-      content,
-      commitMessage,
-      3,
-      metadata.storage_revision,
-    );
+    return saveFileContent(content, commitMessage, 3, metadata);
   }
 
   async initTasks(): Promise<string> {

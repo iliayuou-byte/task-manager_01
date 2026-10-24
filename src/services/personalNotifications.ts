@@ -1,27 +1,37 @@
 import type { Task } from '../core/types.js';
 import { planMessage, weekMessage } from '../views/personalView.js';
 import { dueReminders, type Reminder } from './personal.js';
+import { personalCalendarTasks } from './personalCalendar.js';
 import {
   getPersonalStore,
   type PersonalStore,
   personalEnabled,
 } from './personalStore.js';
 import { queryTasks } from './queryTasks.js';
+import { profileOwner, runForUser } from './userScope.js';
 
 export const checkPersonalReminders = async (
   send: (ownerId: number, text: string) => Promise<unknown>,
 ) => {
   if (!personalEnabled()) return 0;
-  const store = await getPersonalStore();
-  if (!(await store.read()).reminders.enabled) return 0;
-  const { taskData, metadata } = await queryTasks();
-  if (!metadata.timezone) return 0;
-  return dispatchPersonalReminders(
-    store,
-    [...taskData.uncompleted, ...taskData.completed],
-    metadata.timezone,
-    send,
-  );
+  const owner = profileOwner();
+  if (!owner) return 0;
+  return runForUser(owner, async () => {
+    const store = await getPersonalStore();
+    if (!(await store.read()).reminders.enabled) return 0;
+    const { taskData, metadata } = await queryTasks();
+    if (!metadata.timezone) return 0;
+    return dispatchPersonalReminders(
+      store,
+      [
+        ...taskData.uncompleted,
+        ...taskData.completed,
+        ...personalCalendarTasks(metadata, metadata.timezone),
+      ],
+      metadata.timezone,
+      send,
+    );
+  });
 };
 
 export const dispatchPersonalReminders = async (

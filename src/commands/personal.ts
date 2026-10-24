@@ -6,11 +6,13 @@ import {
   AREAS,
   type Area,
   buildCoachingExport,
+  type DayPlan,
   dayFor,
   localDate,
   setPriorities,
   shiftDate,
 } from '../services/personal.js';
+import { personalCalendarTasks } from '../services/personalCalendar.js';
 import type { PersonalStore } from '../services/personalStore.js';
 import { markTaskCompleted, parseUserText } from '../utils/index.js';
 import {
@@ -28,6 +30,7 @@ export interface PersonalDependencies {
   query(): Promise<{ metadata: Metadata; taskData: TaskData }>;
   save(tasks: TaskData, metadata: Metadata): Promise<boolean>;
   enabled(): boolean;
+  capturePlainText?: boolean;
 }
 
 const arg = (ctx: BotContext) =>
@@ -149,7 +152,7 @@ export const createPersonalComposer = (
 
   const showPlan = async (
     ctx: BotContext,
-    mode?: 'normal' | 'late' | 'low',
+    mode?: DayPlan['mode'],
     morning = false,
   ) => {
     const data = await load(true);
@@ -167,7 +170,15 @@ export const createPersonalComposer = (
     });
     await reply(
       ctx,
-      planMessage(state, allTasks(data.taskData), data.timezone, data.now),
+      planMessage(
+        state,
+        [
+          ...allTasks(data.taskData),
+          ...personalCalendarTasks(data.metadata, data.timezone),
+        ],
+        data.timezone,
+        data.now,
+      ),
     );
     const day = dayFor(state, data.date);
     const selected = day.priorities.flatMap((id) =>
@@ -390,7 +401,7 @@ export const createPersonalComposer = (
     );
   });
 
-  command('reminders', async (ctx) => {
+  command('personalreminders', async (ctx) => {
     const text = arg(ctx);
     const { store } = await load(text === 'on');
     const state = await store.update((state) => {
@@ -415,11 +426,13 @@ export const createPersonalComposer = (
       else if (/^weekday [0-6]$/.test(text))
         settings.weeklyDay = Number(text.slice(-1));
       else if (text)
-        throw new PersonalInputError('Неверный формат. Посмотри /reminders.');
+        throw new PersonalInputError(
+          'Неверный формат. Посмотри /personalreminders.',
+        );
     });
     const s = state.reminders;
     await ctx.reply(
-      `Напоминания: ${s.enabled ? 'включены' : 'выключены'}\nУтро ${s.morning} · вечер ${s.evening} · неделя ${s.weekly}, день ${s.weeklyDay} (0 — воскресенье)\nТихие часы ${s.quietStart}–${s.quietEnd}\nДо события: ${s.leadMinutes} мин.\nВремя в часовом поясе /mytimezone.\n\n/reminders on или /reminders off\n/reminders 09:00 21:30 18:00\n/reminders quiet 22:00 08:00\n/reminders lead 30\n/reminders weekday 0\nДля доставки бот должен работать, а планировщик — вызываться каждую минуту.`,
+      `Напоминания: ${s.enabled ? 'включены' : 'выключены'}\nУтро ${s.morning} · вечер ${s.evening} · неделя ${s.weekly}, день ${s.weeklyDay} (0 — воскресенье)\nТихие часы ${s.quietStart}–${s.quietEnd}\nДо события: ${s.leadMinutes} мин.\nВремя в часовом поясе /mytimezone.\n\n/personalreminders on или /personalreminders off\n/personalreminders 09:00 21:30 18:00\n/personalreminders quiet 22:00 08:00\n/personalreminders lead 30\n/personalreminders weekday 0\nДля доставки бот должен работать, а планировщик — вызываться каждую минуту.`,
     );
   });
 
@@ -494,6 +507,7 @@ export const createPersonalComposer = (
   });
   composer.on('message:text', async (ctx, next) => {
     if (
+      deps.capturePlainText === false ||
       !deps.enabled() ||
       ctx.message.text.startsWith('/') ||
       ctx.session.awaitingAdd ||

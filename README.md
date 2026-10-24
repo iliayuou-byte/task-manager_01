@@ -42,12 +42,18 @@ Your tasks live in a **Markdown file in your own GitHub repo** — not locked in
 Inbox capture without AI, three daily priorities, morning plans, evening reviews,
 late-start and low-energy modes, weekly summaries, 90-day goals, timezone-aware
 reminders, and consent-based aggregate coaching exports are available for the
-first allowlisted user in private chat. Personal state requires a private GitHub
+configured `BOT_OWNER_ID` (or sole allowlisted user) in private chat. Personal state requires a private GitHub
 data repository. Set `PERSONAL_SYSTEM_ENABLED=true` to enable it.
 
 On Windows, `bun run start:polling` runs the bot and a local minute scheduler
 without a public webhook URL. See [Russian setup and usage guide](docs/personal-system-ru.md)
 for commands, privacy boundaries, migration and rollback.
+
+This branch also preserves the existing Copilot voice, assistant, calendar imports,
+morning checklists and Fire TV features. `/inbox text` captures without AI;
+`/personalreminders` configures the new daily system while `/reminders` retains
+the existing digest schedule. Polling refuses an active webhook; `bun run clear:webhook`
+explicitly switches delivery to polling without dropping pending updates.
 
 
 - **Just type naturally** — *"Buy milk tomorrow at 3pm #shopping"* → AI extracts title, date, time, duration, description, and links automatically
@@ -80,6 +86,10 @@ The AI extraction layer works with a wide range of models, including smaller or 
 | Caching | None | Redis |
 | Notifications | Vercel cron | QStash hourly cron |
 | Source | Open | Private |
+
+## Development workspace
+
+Open [task-manager.code-workspace](task-manager.code-workspace) in VS Code for the project map, recommended Biome extension, and one-click lint, build, and test tasks. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the Mac development and Windows server workflow.
 
 ## Quick Start
 
@@ -123,6 +133,10 @@ bun run dev
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini API key | If `gemini` |
 | `OPENAI_API_KEY` | OpenAI API key | If `openai` |
 | `OPENAI_BASE_URL` | Custom base URL (Groq, Together, Ollama) | No |
+| `VOICE_TRANSCRIPTION_PROVIDER` | `local` (CPU Whisper) or `gemini` (legacy default when unset) | No |
+| `WHISPER_PYTHON` | Python executable; automatically detects project `.venv` when empty | If local voice |
+| `WHISPER_MODEL` | Local Whisper model, default `small` | No |
+| `WHISPER_LANGUAGE` | Language code or empty for automatic detection | No |
 | `ANTHROPIC_API_KEY` | Anthropic API key | If `anthropic` |
 | `CRON_SECRET` | Secret for cron endpoint auth | Yes |
 | `BOT_SECRET` | Telegram webhook verification (required for personal webhook mode; polling does not use it) | Optional |
@@ -192,3 +206,62 @@ Contributions welcome! Fork → Branch → Commit → PR.
 ## License
 
 [Business Source License 1.1](LICENSE)
+
+## Personal copilot
+
+See [COPILOT_SETUP.md](COPILOT_SETUP.md) for `/now` and local polling setup.
+
+### Проверка категорий перед сохранением
+
+После ввода списка текстом или голосом бот показывает черновик по четырём разделам Эйзенхауэра. `❓` означает предложение ИИ, ещё не проверенное пользователем; это не оценка уверенности модели. Нажмите «Разобрать по одному», чтобы выбрать категорию для каждого дела, или «Изменить категорию», чтобы выбрать отдельное дело по номеру. Номера сохраняются при переносе между разделами. Ваш выбор закрепляется и защищён от автоматической переклассификации. Изменения попадут в хранилище только после «Сохранить»; проверка кнопками не расходует запросы ИИ.
+
+### Локальная расшифровка и OpenAI
+
+Новая `.env.example` предлагает локальный Whisper для голосовых и OpenAI для разбора текста. Для запуска нужно установить Python-зависимости и настроить API-ключ: [инструкция для Mac и Windows](docs/LOCAL_VOICE.md). Существующая `.env` автоматически не изменяется. При неудачном разборе текст сохраняется на 24 часа; `/retry` повторяет его без новой расшифровки. В polling-режиме временные сбои повторяются максимум два раза, ошибки оплаты и авторизации — только вручную. Результат всегда требует подтверждения.
+
+### Разговор с помощником и общие дела
+
+Кнопка «💬 Поговорить» или `/talk` открывает разговор с контекстом текущих задач и памятью последних шести обменов репликами. При просьбе изменить дела помощник предлагает подготовить подтверждаемый черновик. «Забыть разговор» очищает локальную память; выход в меню останавливает показ ожидающего ответа. `ASSISTANT_STYLE` задаёт дополнительный стиль. Через подключение GitHub в ChatGPT можно работать с тем же файлом задач: [инструкция](docs/SHARED_ASSISTANT.md).
+
+Важность определяется влиянием на цели и серьёзностью последствий. Срочность — близким сроком и последствиями промедления. Сообщайте контекст («до выхода из дома», «до завтра»), чтобы предложение ИИ было точнее.
+
+## Тестирование с друзьями
+
+Один экземпляр бота поддерживает отдельные профили в GitHub. В `.env` укажите
+`BOT_OWNER_ID` (ваш Telegram ID) и добавьте ID тестеров через запятую в
+`TELEGRAM_BOT_ALLOWLIST`. Владелец продолжает использовать прежний `FILE_PATH`;
+остальные получают пустые файлы `users/<telegram-id>.md` рядом с ним. Перестановка
+ID в списке доступа не меняет владельца. Несколько ID без `BOT_OWNER_ID` запрещены
+при запуске, чтобы не открыть общий список случайно. Notion пока не поддерживает
+раздельные профили.
+
+Профили работают только в личных чатах. Задачи, часовой пояс, расписание напоминаний
+и правила ИИ разделены. История общения и повторы также привязаны к пользователю.
+Общий ключ ИИ оплачивает запросы всех тестеров; Google Calendar доступен только
+владельцу. Напоминания и уведомления GitHub отправляются владельцу соответствующего
+файла. Кеш скачанной модели Whisper общий, текст разговоров пользователям не
+передаётся. Один локальный голосовой запрос обрабатывается за раз; при занятости
+второй пользователь может повторить ГС.
+
+Для Windows остановите задачу планировщика, обновите проект, измените `.env` и
+запустите задачу снова. Каждому тестеру достаточно открыть того же бота и нажать
+`/start`; ключи API и доступ к GitHub ему не нужны. Для личных задач используйте
+закрытый репозиторий данных: разделение в Telegram не скрывает файлы от людей,
+имеющих доступ к самому репозиторию.
+
+### Статистика тестирования
+
+При включённых профилях (`BOT_OWNER_ID`) тестеры при первом взаимодействии видят
+уведомление о статистике; владелец получает сообщение о начале тестирования.
+`/stats` доступна только владельцу в личном чате и показывает имя/username, Telegram
+ID, язык приложения (при наличии), время первого/последнего действия, число
+действий, меню/кнопок, голосовых, успешных сохранений списка/настроек и взаимодействий
+с ошибкой. Несколько диагностик в одном взаимодействии считаются одной ошибкой.
+Обычное открытие чата без сообщения/нажатия кнопки не фиксируется.
+
+Агрегаты сохраняются в `runtime/usage-stats.json` и переживают перезапуск.
+Содержимое задач, сообщений, голосовых, callback-данные и IP в статистику не
+записываются. Неактивные 30 дней записи удаляются при чтении и минутной проверке
+напоминаний на работающем сервере. Для вебхук-режима нужен регулярный cron.
+Фоновые повторы/напоминания не увеличивают счётчики действий тестера. Уведомление
+владельцу повторяется при следующем действии, если Telegram ранее не принял его.

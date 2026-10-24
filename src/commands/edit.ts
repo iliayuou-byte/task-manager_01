@@ -1,6 +1,7 @@
 import { generateTaskPickerKeyboard } from '../actions/taskPicker.js';
 import { Command } from '../core/config.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import { queryTasks } from '../services/queryTasks.js';
 import {
   extractArg,
@@ -26,8 +27,9 @@ export const editCommand = async (
 
   if (!arg) {
     const { taskData } = await queryTasks();
-    if (taskData.uncompleted.length === 0) return ctx.reply(NO_TASK_MESSAGE);
-    return ctx.reply('Select a task to edit:', {
+    if (taskData.uncompleted.length === 0)
+      return panelReply(ctx, NO_TASK_MESSAGE);
+    return panelReply(ctx, 'Select a task to edit:', {
       reply_markup: generateTaskPickerKeyboard(
         taskData.uncompleted,
         'edit',
