@@ -14,3 +14,10 @@ export class AppError extends Error {
     Error.captureStackTrace(this, this.constructor);
   }
 }
+
+export class TaskRevisionConflictError extends Error {
+  constructor() {
+    super('Tasks changed on GitHub. Reload and repeat your action.');
+    this.name = 'TaskRevisionConflictError';
+  }
+}

@@ -7,6 +7,9 @@ import {
   type BotContext,
   setPendingCalendarOps,
 } from '../middlewares/session.js';
+import { panelNotice, panelReply } from '../services/chatPanel.js';
+import { canUseOwnerCalendar } from '../services/userScope.js';
+import { navigationKeyboard } from '../views/menuView.js';
 
 // Extract argument from command text
 export const extractArg = (text: string, command: string) =>
@@ -28,7 +31,7 @@ export const extractArg = (text: string, command: string) =>
 export const parseTags = (input: string | undefined): string[] => {
   if (!input || input.trim() === '') return [];
 
-  const tagMatches = input.match(/#\w+/g) || [];
+  const tagMatches = input.match(/#[\p{L}\p{N}_-]+/gu) || [];
 
   return Array.from(
     new Set(
@@ -205,7 +208,7 @@ export const parseUserText = (
 
   // Remove only the #tags, keep everything else
   const cleanedText = text
-    .replace(/#\w+/g, '') // Remove all #word patterns
+    .replace(/#[\p{L}\p{N}_-]+/gu, '')
     .replace(/\s+/g, ' ') // Normalize multiple spaces
     .trim();
 
@@ -263,19 +266,27 @@ export const markTaskCompleted = (task: Task, timezone?: string) => {
     timeZone: timezone,
   });
   task.log = `Completed ${completedAt} (${timezone})`;
+  task.completedAt = now.toISOString();
 };
 
 const calendarKeyboard = new InlineKeyboard()
   .text('Yes', 'cal_yes')
-  .text('No', 'cal_no');
+  .text('No', 'cal_no')
+  .row()
+  .text('⬅️ Назад', 'cal_no')
+  .text('🏠 Меню', 'menu:home');
 
 export const promptCalendarAction = async (
   ctx: BotContext,
   message: string,
   ops: CalendarOpSession[],
+  keepKeyboard = false,
 ) => {
+  if (!canUseOwnerCalendar()) return;
   setPendingCalendarOps(ctx.from!.id, ops);
-  await ctx.reply(message, { reply_markup: calendarKeyboard });
+  await (keepKeyboard ? panelNotice : panelReply)(ctx, message, {
+    reply_markup: calendarKeyboard,
+  });
 };
 
 export const logAndReplyError = (
@@ -285,5 +296,8 @@ export const logAndReplyError = (
   message = '❌ Something went wrong. Please try again.',
 ) => {
   logger.errorWithContext({ userId: ctx.from?.id, op, error });
-  ctx.reply(message);
+  panelReply(ctx, message, {
+    reply_markup:
+      ctx.chat?.type === 'private' ? navigationKeyboard() : undefined,
+  });
 };
