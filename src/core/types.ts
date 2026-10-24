@@ -6,6 +6,8 @@ export enum Priority {
 }
 
 export interface Task {
+  id?: string;
+  completedAt?: string;
   name: string;
   completed: boolean;
   // formatted as "YYYY-MM-DD"
@@ -32,9 +34,13 @@ export type TaskData = Record<Exclude<TaskTypeToOp, 'none'>, Task[]>;
 
 export type Field = keyof Task;
 
-export type EditableField = Exclude<Field, 'completed' | 'calendarEventId'>;
+export type EditableField = Exclude<
+  Field,
+  'completed' | 'calendarEventId' | 'id' | 'completedAt'
+>;
 
 export interface Metadata {
+  storage_revision?: string;
   last_synced?: string;
   total_tasks?: number;
   tags?: string[];

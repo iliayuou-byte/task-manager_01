@@ -33,7 +33,7 @@ bun install
 
 ### Testing
 
-**Status**: No automated test suite exists currently.
+**Runner**: `bun test`; tests cover storage, planning, Telegram flows and reminders.
 
 - **Verification**: Relies on `bun run lint`, `bun run build`, and manual verification via `bun run dev`.
 - **Single Test**: If tests are added in the future, use `bun test <file>`.
@@ -97,9 +97,21 @@ src/
   - `markdownParser.ts`: Parses the task table.
   - `storage/`: Storage provider layer (`GitHubStorageProvider`, `NotionStorageProvider`, `factory.ts`).
   - `queryTasks.ts` & `saveTasks.ts`: Dispatches to active storage provider.
+- `personal.ts`: Validated personal state, planning, summaries and reminder eligibility.
+- `personalStore.ts`: Private GitHub state with owner/schema checks and SHA conflict handling.
+- `personalNotifications.ts`: Persistent claims and delivery for personal reminders.
+- `calendarLinks.ts`: Reconciles returned event IDs against fresh task snapshots without recreating events.
+- `commands/personal.ts` and `views/personalView.ts`: Owner-only private-chat workflows.
+- `poll.ts`: Local long polling with a minute scheduler, including Windows.
   - `githubWebhookHandler.ts`: Processes incoming webhooks.
 
 ## 6. Development Rules for Agents
+
+For personal-system changes, read `docs/personal-system-ru.md` for privacy,
+storage migration and deployment contracts. Mount authorization before scenes;
+preserve export consent and explicit aggregate field selection. Keep personal
+state in the private data repository. Task snapshot writes use the SHA observed
+on read; a stale task snapshot must fail instead of overwriting newer data.
 
 1.  **Imports**: Always check for the `.js` extension in imports. The build will fail without it.
 2.  **Linting**: Run `bun run lint` after making changes to ensure no regressions.

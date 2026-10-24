@@ -4,6 +4,9 @@
   "description": "Telegram bot that manages tasks in a Markdown file with AI parsing, Google Calendar sync, and GitHub storage",
   "type": "module",
   "scripts": {
+    "test": "bun test",
+    "prestart:polling": "bun src/scripts/generateChangelog.ts",
+    "start:polling": "bun --env-file=.env src/poll.ts",
     "typecheck": "tsc --noEmit",
     "prebuild": "bun src/scripts/generateChangelog.ts",
     "build": "tsc --noEmit",

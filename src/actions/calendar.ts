@@ -14,8 +14,12 @@ const getCalendarService = async () => {
 
 import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
+import {
+  type CalendarLink,
+  CalendarLinkSaveError,
+  persistCalendarLinks,
+} from '../services/calendarLinks.js';
 import { queryTasks } from '../services/queryTasks.js';
-import { saveTasks } from '../services/saveTasks.js';
 import { findTaskIdxByName } from '../utils/index.js';
 
 export const registerCalendarAction = (composer: Composer<BotContext>) => {
@@ -62,6 +66,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
       // Process operations
       let successCount = 0;
       let failCount = 0;
+      const links: CalendarLink[] = [];
 
       for (const op of ops) {
         try {
@@ -87,6 +92,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
             );
             if (eventId) {
               task.calendarEventId = eventId;
+              links.push({ taskId: task.id, taskName: task.name, eventId });
               successCount++;
             } else {
               failCount++;
@@ -124,6 +130,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
                 metadata.timezone,
               );
               if (eventId) {
+                links.push({ taskId: task.id, taskName: task.name, eventId });
                 if (eventId !== task.calendarEventId) {
                   task.calendarEventId = eventId;
                 }
@@ -143,10 +150,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
         }
       }
 
-      // Save once after all ops
-      if (successCount > 0) {
-        await saveTasks(taskData, metadata);
-      }
+      await persistCalendarLinks(links);
 
       await ctx.reply(
         `✅ Processed ${successCount} calendar operations.` +
@@ -154,7 +158,11 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
       );
     } catch (error) {
       logger.errorWithContext({ userId, op: 'CALENDAR_ACTION', error });
-      await ctx.reply('❌ An error occurred.');
+      await ctx.reply(
+        error instanceof CalendarLinkSaveError
+          ? error.message
+          : '❌ An error occurred.',
+      );
     }
 
     clearPendingCalendarOps(userId);

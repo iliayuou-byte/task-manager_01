@@ -28,7 +28,7 @@ export const extractArg = (text: string, command: string) =>
 export const parseTags = (input: string | undefined): string[] => {
   if (!input || input.trim() === '') return [];
 
-  const tagMatches = input.match(/#\w+/g) || [];
+  const tagMatches = input.match(/#[\p{L}\p{N}_-]+/gu) || [];
 
   return Array.from(
     new Set(
@@ -205,7 +205,7 @@ export const parseUserText = (
 
   // Remove only the #tags, keep everything else
   const cleanedText = text
-    .replace(/#\w+/g, '') // Remove all #word patterns
+    .replace(/#[\p{L}\p{N}_-]+/gu, '')
     .replace(/\s+/g, ' ') // Normalize multiple spaces
     .trim();
 
@@ -263,6 +263,7 @@ export const markTaskCompleted = (task: Task, timezone?: string) => {
     timeZone: timezone,
   });
   task.log = `Completed ${completedAt} (${timezone})`;
+  task.completedAt = now.toISOString();
 };
 
 const calendarKeyboard = new InlineKeyboard()

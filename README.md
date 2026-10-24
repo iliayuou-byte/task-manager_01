@@ -37,6 +37,19 @@ Your tasks live in a **Markdown file in your own GitHub repo** — not locked in
 
 ## Features
 
+### Personal daily system (optional)
+
+Inbox capture without AI, three daily priorities, morning plans, evening reviews,
+late-start and low-energy modes, weekly summaries, 90-day goals, timezone-aware
+reminders, and consent-based aggregate coaching exports are available for the
+first allowlisted user in private chat. Personal state requires a private GitHub
+data repository. Set `PERSONAL_SYSTEM_ENABLED=true` to enable it.
+
+On Windows, `bun run start:polling` runs the bot and a local minute scheduler
+without a public webhook URL. See [Russian setup and usage guide](docs/personal-system-ru.md)
+for commands, privacy boundaries, migration and rollback.
+
+
 - **Just type naturally** — *"Buy milk tomorrow at 3pm #shopping"* → AI extracts title, date, time, duration, description, and links automatically
 - **Your data, your choice** — Store tasks in a GitHub Markdown table or a Notion database, editable anywhere
 - **Google Calendar sync** — Events created/updated/deleted automatically when tasks change
@@ -100,6 +113,7 @@ bun run dev
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather | Yes |
 | `TELEGRAM_BOT_ALLOWLIST` | Comma-separated Telegram user IDs | Yes |
 | `STORAGE_PROVIDER` | `github` (default) or `notion` | Optional |
+| `PERSONAL_SYSTEM_ENABLED` | `true` enables the private personal system (GitHub storage only) | Optional |
 | `PROVIDER_API_KEY` | GitHub Personal Access Token | If `STORAGE_PROVIDER=github` |
 | `FILE_PATH` | Full URL to your task file on GitHub | If `STORAGE_PROVIDER=github` |
 | `NOTION_TOKEN` | Notion internal connection token | If `STORAGE_PROVIDER=notion` |
@@ -111,7 +125,7 @@ bun run dev
 | `OPENAI_BASE_URL` | Custom base URL (Groq, Together, Ollama) | No |
 | `ANTHROPIC_API_KEY` | Anthropic API key | If `anthropic` |
 | `CRON_SECRET` | Secret for cron endpoint auth | Yes |
-| `BOT_SECRET` | Telegram webhook verification | Optional |
+| `BOT_SECRET` | Telegram webhook verification (required for personal webhook mode; polling does not use it) | Optional |
 | `GITHUB_WEBHOOK_SECRET` | GitHub push notification verification | Optional |
 | `GOOGLE_CALENDAR_ID` | Calendar ID for sync | Optional |
 | `GOOGLE_CALENDAR_CREDENTIALS_PATH` | Service account JSON (local dev) | Optional |

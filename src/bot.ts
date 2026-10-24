@@ -9,6 +9,7 @@ import { clearCompletedCommand } from './commands/clearCompleted.js';
 import { completeCommand } from './commands/complete.js';
 import { editCommand } from './commands/edit.js';
 import { listCommand } from './commands/list.js';
+import { createPersonalComposer } from './commands/personal.js';
 import { removeCommand } from './commands/remove.js';
 import { searchCommand } from './commands/search.js';
 import { sortCommand } from './commands/sort.js';
@@ -19,11 +20,14 @@ import {
 } from './commands/timezone.js';
 import { todayCommand } from './commands/today.js';
 import { whatsnewCommand } from './commands/whatsnew.js';
-import { Command, IS_PROD } from './core/config.js';
+import { ALLOWED_USERS, Command, IS_PROD } from './core/config.js';
 import logger from './core/logger.js';
 import { allowlist } from './middlewares/allowlist.js';
 import { type BotContext, sessionMiddleware } from './middlewares/session.js';
 import { editSceneComposer, enterEditScene } from './scenes/editTaskScene.js';
+import { getPersonalStore, personalEnabled } from './services/personalStore.js';
+import { queryTasks } from './services/queryTasks.js';
+import { saveTasks } from './services/saveTasks.js';
 import { START_WORDING } from './views/generalView.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -39,8 +43,25 @@ if (!IS_PROD) {
 
 const bot = new Bot<BotContext>(token);
 
+bot.use(allowlist);
 bot.use(sessionMiddleware);
 bot.use(autoChatAction());
+bot.use(async (ctx, next) => {
+  if (ctx.message?.text?.startsWith('/')) {
+    ctx.session.awaitingAdd = undefined;
+    ctx.session.editScene = undefined;
+  }
+  await next();
+});
+bot.use(
+  createPersonalComposer({
+    ownerId: ALLOWED_USERS[0],
+    store: getPersonalStore,
+    query: queryTasks,
+    save: saveTasks,
+    enabled: personalEnabled,
+  }),
+);
 
 bot.catch((err) => {
   logger.errorWithContext({
@@ -55,10 +76,8 @@ infoComposer.command(Command.WHATSNEW, whatsnewCommand);
 
 export const opComposer = new Composer<BotContext>();
 
-// Scene composers must be mounted before commands for session isolation
 opComposer.use(addSceneComposer);
 opComposer.use(editSceneComposer);
-opComposer.use(allowlist);
 
 opComposer.command(Command.ADD, addCommand);
 opComposer.command(Command.LIST, listCommand);

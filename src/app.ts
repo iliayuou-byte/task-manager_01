@@ -9,6 +9,7 @@ import { verifyGithubWebhook } from './middlewares/verifyGithubWebhook.js';
 import { cronHandler } from './routes/cron.js';
 import { githubWebhookHandler } from './routes/githubWebhook.js';
 import { healthHandler } from './routes/health.js';
+import { personalEnabled } from './services/personalStore.js';
 
 const app = new Hono();
 
@@ -24,8 +25,11 @@ app.use(async (c, next) => {
 // NOTE: Manual handler instead of grammY's webhookCallback due to
 // @hono/node-server/vercel POST body hanging bug
 // https://github.com/honojs/node-server/issues/84
-const secret = process.env.BOT_SECRET || undefined;
 app.post('/api', async (c) => {
+  const secret = process.env.BOT_SECRET || undefined;
+  if (personalEnabled() && !secret) {
+    return c.json({ error: 'Webhook authentication required' }, 503);
+  }
   const secretHeader = c.req.header('x-telegram-bot-api-secret-token');
   if (secret && secretHeader !== secret) {
     return c.json({ error: 'Unauthorized' }, 401);

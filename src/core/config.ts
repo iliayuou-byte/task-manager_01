@@ -25,6 +25,8 @@ export const TABLE_COLUMNS: ReadonlyArray<{
   { key: 'calendarEventId', header: 'CalendarEventId' },
   { key: 'log', header: 'Log' },
   { key: 'recurrenceRule', header: 'RecurrenceRule' },
+  { key: 'id', header: 'Id' },
+  { key: 'completedAt', header: 'CompletedAt' },
 ] as const;
 
 export const getInitialContent = (date: Date) => `---

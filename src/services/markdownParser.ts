@@ -1,7 +1,7 @@
 import { TABLE_COLUMNS } from '../core/config.js';
 import logger from '../core/logger.js';
 import type { Metadata, Priority, Task, TaskData } from '../core/types.js';
-import { escapeMarkdownTable, formatTags, parseTags } from '../utils/index.js';
+import { escapeMarkdownTable, parseTags } from '../utils/index.js';
 import { validateTask } from '../utils/validators.js';
 
 // Regex patterns for content parsing
@@ -130,9 +130,11 @@ export const parseMarkdown = (content: string): ParseResult => {
     if (inTable && line.startsWith('|')) {
       try {
         const cells = line
-          .split('|')
+          .split(/(?<!\\)\|/)
           .slice(1, -1) // Remove artifacts before first | and after last |
-          .map((cell) => cell.trim());
+          .map((cell) =>
+            cell.trim().replace(/\\\|/g, '|').replace(/<br>/g, '\n'),
+          );
 
         if (cells.length >= 2) {
           const completed =
@@ -160,6 +162,9 @@ export const parseMarkdown = (content: string): ParseResult => {
             link: getCell(cells, COL_IDX.LINK),
             calendarEventId: getCell(cells, COL_IDX.CALENDAR_EVENT_ID),
             recurrenceRule: getCell(cells, COL_IDX.RECURRENCE_RULE),
+            log: getCell(cells, getColIdx('log')),
+            id: getCell(cells, getColIdx('id')),
+            completedAt: getCell(cells, getColIdx('completedAt')),
           };
 
           tasks.push(task);
@@ -266,7 +271,7 @@ export const serializeTaskMarkdown = (
       }
 
       if (col.key === 'tags') {
-        return formatTags(task.tags);
+        return task.tags.map((tag) => `#${tag}`).join(' ');
       }
 
       return escapeMarkdownTable(value as string | undefined);
