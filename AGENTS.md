@@ -102,6 +102,7 @@ src/
 - `personalNotifications.ts`: Persistent claims and delivery for personal reminders.
 - `calendarLinks.ts`: Reconciles returned event IDs against fresh task snapshots without recreating events.
 - `commands/personal.ts` and `views/personalView.ts`: Owner-only private-chat workflows.
+- `commands/personalButtons.ts` and `views/personalButtonsView.ts`: Expiring personal input drafts and pure screens; check draft identity after asynchronous reads. `views/iphoneAlarmView.ts` provides a fixed, non-secret clipboard plan for a locally configured iPhone shortcut; it never claims device access or execution.
 - `personalCalendar.ts`: Adapts imported ICS slots for personal plans and event reminders without copying them into saved tasks or coaching statistics.
 - `polling.ts`: Local long polling with minute schedulers and pending-input retries, including Windows. Refuses active webhooks; `clear:webhook` explicitly removes one without dropping updates.
   - `githubWebhookHandler.ts`: Processes incoming webhooks.
@@ -116,8 +117,10 @@ on read; a stale task snapshot must fail instead of overwriting newer data.
 Only a successful write may advance that same snapshot's revision, using the
 SHA returned by GitHub. The personal owner is `profileOwner()`, never allowlist
 position. Background personal checks enter the owner's user scope explicitly.
-Personal text capture is disabled in the integrated bot: `/inbox text` is explicit,
-while text/voice keep Copilot routing. `/personalreminders` and `/reminders` are independent.
+Personal text capture is disabled outside an explicit personal input draft:
+`/inbox text` and Add buttons are explicit; other text/voice keep Copilot routing.
+The managed personal routine replaces only the owner legacy wake message/checklist;
+legacy daily digests and the separate Fire TV enable setting remain in effect.
 
 1.  **Imports**: Always check for the `.js` extension in imports. The build will fail without it.
 2.  **Linting**: Run `bun run lint` after making changes to ensure no regressions.
@@ -173,7 +176,7 @@ while text/voice keep Copilot routing. `/personalreminders` and `/reminders` are
 
 ### Context keyboards
 
-`services/contextKeyboard.ts` paginates callback-backed inline screens and retains compatibility with text taps on older reply keyboards. Mount it behind allowlist and before commands/scenes. `panelReply` remembers mappings only after successful send. The main keyboard has seven sections on one screen. Preserve callback ownership/expiry validation; synthetic callbacks must never call Telegram answerCallbackQuery. Voice progress panels cannot be edited into a newer menu: later transcription cleanup must only remove its own status.
+`services/contextKeyboard.ts` paginates callback-backed inline screens and retains compatibility with text taps on older reply keyboards. Mount it behind allowlist and before commands/scenes. `panelReply` remembers mappings only after successful send. The main keyboard has seven sections, plus an owner-only personal day entry when enabled. Personal draft cancellation runs before context-keyboard routing; time-picker pagination preserves its draft. Preserve callback ownership/expiry validation; synthetic callbacks must never call Telegram answerCallbackQuery. Voice progress panels cannot be edited into a newer menu: later transcription cleanup must only remove its own status.
 
 ### Voice failures
 
@@ -273,3 +276,12 @@ otherwise it tries the system URL handler. Check the `am start -W` output as wel
 as the process exit code: Android can report an activity error on stdout.
 The TV settings test button uses the saved media list and reports when it is empty.
 An accepted intent does not prove the video played; confirm playback on the TV.
+
+### Personal morning routine
+
+The personal day snapshots its morning items on first access; edits apply to the next day.
+`awakeAt` stops the two extra Telegram signals independently of opening the plan.
+`reminders.routine` suppresses only the owner legacy wake/checklist messages; Fire TV
+uses its separate enable flag at the managed wake time. Old state defaults to no
+extra wake or bedtime signals. iPhone Clock changes require a manually configured
+and manually launched local shortcut; copying text is never proof of execution.

@@ -6,6 +6,7 @@ import {
   dayFor,
   dueReminders,
   localDate,
+  personalStateSchema,
   setPriorities,
   shiftDate,
   weeklySummary,
@@ -21,6 +22,137 @@ const task = (id: string, extra: Partial<Task> = {}): Task => ({
 });
 
 describe('Personal planning', () => {
+  it('keeps the first wake signal after an early plan and stops it only after waking', () => {
+    const state = createPersonalState(1);
+    Object.assign(state.reminders, {
+      enabled: true,
+      morning: '08:00',
+      wakeRepeats: true,
+      quietStart: '01:00',
+      quietEnd: '08:00',
+    });
+    const day = dayFor(state, '2026-10-26');
+    day.morningAt = '2026-10-25T23:10:00Z';
+    const atWake = new Date('2026-10-26T07:00:00Z');
+    expect(
+      dueReminders(state, [], 'Europe/Berlin', atWake).map((r) => r.kind),
+    ).toEqual(['morning']);
+    day.awakeAt = '2026-10-26T06:59:00Z';
+    expect(dueReminders(state, [], 'Europe/Berlin', atWake)).toEqual([]);
+    state.reminders.wakeRepeats = false;
+    delete day.awakeAt;
+    expect(dueReminders(state, [], 'Europe/Berlin', atWake)).toEqual([]);
+  });
+  it('loads old serialized state with new routine fields safely disabled', () => {
+    const state = personalStateSchema.parse({
+      version: 1,
+      ownerId: 1,
+      days: {
+        '2026-10-25': {
+          mode: 'normal',
+          priorities: [],
+          firstStep: 'Kept',
+          morningAt: '2026-10-25T07:00:00Z',
+        },
+      },
+      reminders: {
+        enabled: true,
+        morning: '09:00',
+        evening: '21:30',
+        weekly: '18:00',
+        weeklyDay: 0,
+        quietStart: '22:00',
+        quietEnd: '08:00',
+        leadMinutes: 30,
+      },
+    });
+    expect(state.reminders.wakeRepeats).toBe(false);
+    expect(state.reminders.routine).toBe(false);
+    expect(state.reminders.bedtime).toBeUndefined();
+    expect(state.days['2026-10-25'].firstStep).toBe('Kept');
+    expect(state.days['2026-10-25'].morningItems).toEqual([]);
+    expect(state.morningItems).toHaveLength(6);
+  });
+  it('offers wake repeats within ten minutes and stops them after waking up', () => {
+    const state = createPersonalState(1);
+    Object.assign(state.reminders, {
+      enabled: true,
+      morning: '08:00',
+      wakeRepeats: true,
+      quietStart: '01:00',
+      quietEnd: '08:00',
+    });
+    expect(
+      dueReminders(
+        state,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-26T07:00:00Z'),
+      ).map((r) => r.kind),
+    ).toEqual(['morning']);
+    expect(
+      dueReminders(
+        state,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-26T07:05:00Z'),
+      ).map((r) => r.kind),
+    ).toEqual(['wake']);
+    expect(
+      dueReminders(
+        state,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-26T07:10:00Z'),
+      ).map((r) => r.kind),
+    ).toEqual(['wake']);
+    Object.assign(dayFor(state, '2026-10-26'), {
+      awakeAt: '2026-10-26T07:06:00Z',
+    });
+    expect(
+      dueReminders(
+        state,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-26T07:10:00Z'),
+      ),
+    ).toEqual([]);
+  });
+  it('offers the bedtime reminder before quiet hours and keeps new signals off for old settings', () => {
+    const state = createPersonalState(1);
+    Object.assign(state.reminders, {
+      enabled: true,
+      bedtime: '00:45',
+      quietStart: '01:00',
+      quietEnd: '08:00',
+    });
+    expect(
+      dueReminders(
+        state,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-25T23:45:00Z'),
+      ).map((r) => r.kind),
+    ).toEqual(['bedtime']);
+    expect(
+      dueReminders(
+        state,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-26T00:00:00Z'),
+      ),
+    ).toEqual([]);
+    const existing = createPersonalState(1);
+    existing.reminders.enabled = true;
+    expect(
+      dueReminders(
+        existing,
+        [],
+        'Europe/Berlin',
+        new Date('2026-10-26T07:05:00Z'),
+      ),
+    ).toEqual([]);
+  });
   it('uses the local date and calendar arithmetic across DST', () => {
     expect(localDate(new Date('2026-10-24T23:30:00Z'), 'Europe/Berlin')).toBe(
       '2026-10-25',

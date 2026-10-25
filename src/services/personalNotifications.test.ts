@@ -4,6 +4,59 @@ import { dispatchPersonalReminders } from './personalNotifications.js';
 import { PersonalStore } from './personalStore.js';
 
 describe('Reminder delivery', () => {
+  it('delivers an actionable wake signal and stops later repeats after acknowledgement', async () => {
+    let state = createPersonalState(1);
+    Object.assign(state.reminders, {
+      enabled: true,
+      morning: '08:00',
+      wakeRepeats: true,
+      quietStart: '01:00',
+      quietEnd: '08:00',
+    });
+    const store = new PersonalStore(1, {
+      read: async () => ({ state: structuredClone(state) }),
+      write: async (next) => {
+        state = structuredClone(next);
+      },
+    });
+    const sent: string[] = [];
+    await dispatchPersonalReminders(
+      store,
+      [],
+      'Europe/Berlin',
+      async (_id, text, options) => {
+        sent.push(text);
+        expect(options?.reply_markup.inline_keyboard.flat()).toContainEqual({
+          text: '🙌 Я встал',
+          callback_data: 'pui:awake:2026-10-26',
+        });
+      },
+      new Date('2026-10-26T07:05:00Z'),
+    );
+    expect(sent).toHaveLength(1);
+    await store.update((value) => {
+      value.days['2026-10-26'] = {
+        mode: 'normal',
+        usedLate: false,
+        usedLow: false,
+        priorities: [],
+        firstStep: '',
+        morningItems: [],
+        morningDone: [],
+        awakeAt: '2026-10-26T07:06:00Z',
+      };
+    });
+    await dispatchPersonalReminders(
+      store,
+      [],
+      'Europe/Berlin',
+      async (_id, text) => {
+        sent.push(text);
+      },
+      new Date('2026-10-26T07:10:00Z'),
+    );
+    expect(sent).toHaveLength(1);
+  });
   it('rechecks time after a delayed first read', async () => {
     const state = createPersonalState(1);
     state.reminders.enabled = true;

@@ -1,6 +1,11 @@
+import type { InlineKeyboard } from 'grammy';
 import type { Task } from '../core/types.js';
-import { planMessage, weekMessage } from '../views/personalView.js';
-import { dueReminders, type Reminder } from './personal.js';
+import {
+  personalReminderKeyboard,
+  planMessage,
+  weekMessage,
+} from '../views/personalView.js';
+import { dueReminders, localDate, type Reminder } from './personal.js';
 import { personalCalendarTasks } from './personalCalendar.js';
 import {
   getPersonalStore,
@@ -10,9 +15,13 @@ import {
 import { queryTasks } from './queryTasks.js';
 import { profileOwner, runForUser } from './userScope.js';
 
-export const checkPersonalReminders = async (
-  send: (ownerId: number, text: string) => Promise<unknown>,
-) => {
+export type PersonalReminderSender = (
+  ownerId: number,
+  text: string,
+  options?: { reply_markup: InlineKeyboard },
+) => Promise<unknown>;
+
+export const checkPersonalReminders = async (send: PersonalReminderSender) => {
   if (!personalEnabled()) return 0;
   const owner = profileOwner();
   if (!owner) return 0;
@@ -38,7 +47,7 @@ export const dispatchPersonalReminders = async (
   store: PersonalStore,
   tasks: Task[],
   timezone: string,
-  send: (ownerId: number, text: string) => Promise<unknown>,
+  send: PersonalReminderSender,
   time: Date | (() => Date) = () => new Date(),
 ) => {
   const clock = time instanceof Date ? () => time : time;
@@ -77,7 +86,12 @@ export const dispatchPersonalReminders = async (
     )
       continue;
     const message = reminderMessage(reminder, fresh, tasks, timezone, now);
-    await send(store.ownerId, message);
+    await send(store.ownerId, message, {
+      reply_markup: personalReminderKeyboard(
+        reminder,
+        localDate(now, timezone),
+      ),
+    });
     await store.update((state) => {
       if (state.deliveries[reminder.key]?.claim === claim) {
         state.deliveries[reminder.key] = {
@@ -99,6 +113,10 @@ const reminderMessage = (
   now: Date,
 ) => {
   switch (reminder.kind) {
+    case 'wake':
+      return '⏰ Пора вставать. Начни с одного действия: встань и открой шторы.\nНажми «Я встал», чтобы остановить повторы этого утра.';
+    case 'bedtime':
+      return '🌙 Время готовиться ко сну. Заверши текущие дела, подготовь вещи на утро и отложи телефон.';
     case 'morning':
       return `Доброе утро. Открой /morning и выбери до трёх результатов.\n\n${planMessage(state, tasks, timezone, now)}`.slice(
         0,

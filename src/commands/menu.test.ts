@@ -16,6 +16,8 @@ import {
   registerPendingInputs,
   retryPendingInputsOnce,
 } from '../services/pendingInputs.js';
+import { createPersonalState } from '../services/personal.js';
+import { PersonalStore } from '../services/personalStore.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
@@ -24,6 +26,7 @@ import { registerBrainActions } from './brain.js';
 import { registerCalendarSchedule } from './calendarSchedule.js';
 import { completeCommand } from './complete.js';
 import { registerMenu } from './menu.js';
+import { createPersonalComposer } from './personal.js';
 import { registerSelectedRemoval } from './removeSelected.js';
 
 const spies: Array<{ mockRestore(): void }> = [];
@@ -31,7 +34,7 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
-const fixture = (user: number) => {
+const fixture = (user: number, personal = false) => {
   let data: { taskData: TaskData; metadata: Metadata } = {
     taskData: {
       completed: [],
@@ -99,6 +102,28 @@ const fixture = (user: number) => {
     ctx.session = session;
     await next();
   });
+  if (personal) {
+    let state = createPersonalState(user);
+    const store = new PersonalStore(user, {
+      read: async () => ({ state: structuredClone(state) }),
+      write: async (next) => {
+        state = structuredClone(next);
+      },
+    });
+    bot.use(
+      createPersonalComposer({
+        ownerId: user,
+        enabled: () => true,
+        capturePlainText: false,
+        store: async () => store,
+        query: async () => structuredClone(data),
+        save: async (taskData, metadata) => {
+          data = structuredClone({ taskData, metadata });
+          return true;
+        },
+      }),
+    );
+  }
   registerContextKeyboard(bot);
   registerAiSettings(bot);
   registerCalendarSchedule(bot);
@@ -194,6 +219,35 @@ const fixture = (user: number) => {
     data: () => data,
   };
 };
+
+test('personal navigation cancels abandoned AI rule input before text or voice', async () => {
+  const f = fixture(913, true);
+  await f.click('ai:open');
+  await f.tap('Мои правила');
+  await f.click('pui:plan');
+  const before = f.data().metadata.ai_priority_rules;
+  await f.text('Обычный текст после личного плана');
+  expect(f.data().metadata.ai_priority_rules).toBe(before);
+  await f.click('ai:open');
+  await f.tap('Мои правила');
+  await f.click('pui:home');
+  const offset = f.calls.length;
+  await f.bot.handleUpdate({
+    update_id: 9999,
+    message: {
+      message_id: 9999,
+      date: 0,
+      chat: { id: 913, type: 'private', first_name: 'User' },
+      from: { id: 913, is_bot: false, first_name: 'User' },
+      voice: { file_id: 'test', file_unique_id: 'test', duration: 1 },
+    },
+  });
+  expect(
+    f.calls
+      .slice(offset)
+      .some((call) => String(call.text).includes('Пришли правила текстом')),
+  ).toBe(false);
+});
 
 test('reminder buttons preserve disabled schedule and restore it', async () => {
   const f = fixture(501);

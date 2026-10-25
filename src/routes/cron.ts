@@ -6,8 +6,8 @@ import { checkReminders } from '../services/reminders.js';
 
 export const cronHandler = async (c: Context, bot: Bot<BotContext>) => {
   await checkReminders(bot);
-  const personalSent = await checkPersonalReminders((id, text) =>
-    bot.api.sendMessage(id, text),
+  const personalSent = await checkPersonalReminders((id, text, options) =>
+    bot.api.sendMessage(id, text, options),
   );
   return c.json({
     success: true,

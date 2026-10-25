@@ -2,6 +2,7 @@ import { Composer, InlineKeyboard, InputFile } from 'grammy';
 import logger from '../core/logger.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 import {
   AREAS,
   type Area,
@@ -20,9 +21,14 @@ import {
   COACHING_INFO,
   EVENING_HELP,
   PERSONAL_HELP,
+  personalNavigation,
+  personalPlanKeyboard,
   planMessage,
   weekMessage,
 } from '../views/personalView.js';
+import { cancelAiSettings } from './aiSettings.js';
+import { openTaskById } from './menu.js';
+import { createPersonalButtons } from './personalButtons.js';
 
 export interface PersonalDependencies {
   ownerId: number;
@@ -36,9 +42,18 @@ export interface PersonalDependencies {
 const arg = (ctx: BotContext) =>
   ctx.message?.text?.replace(/^\/\w+(?:@\w+)?\s*/, '').trim() ?? '';
 const allTasks = (data: TaskData) => [...data.uncompleted, ...data.completed];
-const reply = async (ctx: BotContext, text: string) => {
+const reply = async (
+  ctx: BotContext,
+  text: string,
+  keyboard = personalNavigation(),
+) => {
   for (let offset = 0; offset < text.length; offset += 3500)
-    await ctx.reply(text.slice(offset, offset + 3500));
+    await panelReply(
+      ctx,
+      text.slice(offset, offset + 3500),
+      { reply_markup: offset + 3500 >= text.length ? keyboard : undefined },
+      { navigation: false },
+    );
 };
 
 export const createPersonalComposer = (
@@ -63,6 +78,7 @@ export const createPersonalComposer = (
           );
         return;
       }
+      cancelAiSettings(ctx);
       try {
         await handler(ctx);
       } catch (error) {
@@ -80,8 +96,13 @@ export const createPersonalComposer = (
     };
   const command = (
     name: string,
-    handler: (ctx: BotContext) => Promise<unknown>,
-  ) => composer.command(name, guard(handler));
+    handler: (ctx: BotContext, text: string) => Promise<unknown>,
+  ) => {
+    composer.command(
+      name,
+      guard((ctx) => handler(ctx, arg(ctx))),
+    );
+  };
   const save = async (tasks: TaskData, metadata: Metadata) => {
     if (!(await deps.save(tasks, metadata)))
       throw new PersonalInputError('Изменения не сохранены. Повтори действие.');
@@ -104,16 +125,22 @@ export const createPersonalComposer = (
     }
     return { store, state, ...data, timezone, date, now };
   };
-  const capture = async (ctx: BotContext, text: string) => {
+  const capture = async (
+    ctx: BotContext,
+    text: string,
+    options?: { area?: Area; active?: () => boolean },
+  ) => {
     if (!text || text.length > 500)
       throw new PersonalInputError(
         'Напиши дело длиной до 500 символов: /inbox открыть конспект #study',
       );
     const { tags, text: title } = parseUserText(text);
+    if (options?.area && !tags.includes(options.area)) tags.push(options.area);
     const name = title;
     if (!name)
       throw new PersonalInputError('Добавь название дела перед тегами.');
     const data = await load();
+    if (options?.active && !options.active()) return;
     const existing = allTasks(data.taskData);
     let unique = name;
     let suffix = 2;
@@ -126,8 +153,15 @@ export const createPersonalComposer = (
       completed: false,
     });
     await save(data.taskData, data.metadata);
-    await ctx.reply(
-      `Записано во входящие: ${unique}\nВыбрать на сегодня — /focus`,
+    if (options?.active && !options.active()) return;
+    await reply(
+      ctx,
+      `Записано во входящие: ${unique}`,
+      new InlineKeyboard()
+        .text('🎯 Выбрать на сегодня', 'pui:focus')
+        .row()
+        .text('📥 Входящие', 'pui:inbox')
+        .text('🧭 Мой день', 'pui:home'),
     );
   };
 
@@ -135,8 +169,7 @@ export const createPersonalComposer = (
     await deps.store().then((store) => store.read());
     await reply(ctx, PERSONAL_HELP);
   });
-  command('inbox', async (ctx) => {
-    const text = arg(ctx);
+  command('inbox', async (ctx, text) => {
     if (text) return capture(ctx, text);
     const { taskData } = await load();
     const inbox = taskData.uncompleted.filter(
@@ -168,6 +201,13 @@ export const createPersonalComposer = (
           day.firstStep = yesterday.review.next;
       }
     });
+    const day = dayFor(state, data.date);
+    const selected = day.priorities.flatMap((id) =>
+      data.taskData.uncompleted.filter(
+        (task) => task.id === id && !task.completed,
+      ),
+    );
+    const visible = day.mode === 'normal' ? selected : selected.slice(0, 1);
     await reply(
       ctx,
       planMessage(
@@ -179,27 +219,14 @@ export const createPersonalComposer = (
         data.timezone,
         data.now,
       ),
+      personalPlanKeyboard(visible),
     );
-    const day = dayFor(state, data.date);
-    const selected = day.priorities.flatMap((id) =>
-      data.taskData.uncompleted.filter(
-        (task) => task.id === id && !task.completed,
-      ),
-    );
-    const visible = day.mode === 'normal' ? selected : selected.slice(0, 1);
-    if (visible.length) {
-      const keyboard = new InlineKeyboard();
-      for (const task of visible)
-        keyboard.text(`✓ ${task.name.slice(0, 45)}`, `pd:${task.id}`).row();
-      await ctx.reply('Отметить результат:', { reply_markup: keyboard });
-    }
   };
   command('morning', (ctx) => showPlan(ctx, undefined, true));
   command('late', (ctx) => showPlan(ctx, 'late'));
   command('lowenergy', (ctx) => showPlan(ctx, 'low'));
   command('normal', (ctx) => showPlan(ctx, 'normal'));
-  command('step', async (ctx) => {
-    const text = arg(ctx);
+  command('step', async (ctx, text) => {
     if (!text || text.length > 400)
       throw new PersonalInputError(
         'Напиши первый шаг до 400 символов: /step открыть конспект на странице 10',
@@ -235,9 +262,15 @@ export const createPersonalComposer = (
         allTasks(data.taskData).find((task) => task.id === id)?.name ??
         'Задача удалена',
     );
+    keyboard
+      .row()
+      .text('📋 План дня', 'pui:plan')
+      .row()
+      .text('⬅️ Назад', 'pui:home')
+      .text('🏠 Меню', 'menu:home');
     const text = `Три результата дня · ${data.date}\n${names.length ? names.map((name, i) => `${i + 1}. ${name.slice(0, 150)}`).join('\n') : 'Пока не выбраны.'}\n\nНажми, чтобы выбрать или убрать. Остальное останется во входящих.\n${tasks.length ? '/morning — посмотреть план.' : '/inbox текст — записать дело.'}`;
     if (edit) await ctx.editMessageText(text, { reply_markup: keyboard });
-    else await ctx.reply(text, { reply_markup: keyboard });
+    else await reply(ctx, text, keyboard);
   };
   command('focus', (ctx) => focusView(ctx));
   composer.callbackQuery(
@@ -294,8 +327,7 @@ export const createPersonalComposer = (
     }),
   );
 
-  command('evening', async (ctx) => {
-    const text = arg(ctx);
+  command('evening', async (ctx, text) => {
     if (!text) return reply(ctx, EVENING_HELP);
     const parts = text.split('|').map((part) => part.trim());
     const energy = Number(parts[0]);
@@ -320,16 +352,16 @@ export const createPersonalComposer = (
       'Обзор сохранён. Первый шаг появится в завтрашнем /morning. Незавершённые дела можно выбрать заново — они не становятся долгом.',
     );
   });
-  command('week', async (ctx) => {
+  const showWeek = async (ctx: BotContext) => {
     const data = await load();
     await reply(
       ctx,
       weekMessage(data.state, allTasks(data.taskData), data.timezone, data.now),
     );
-  });
+  };
+  command('week', showWeek);
 
-  command('goals', async (ctx) => {
-    const text = arg(ctx);
+  command('goals', async (ctx, text) => {
     const data = await load();
     if (text.startsWith('add ')) {
       const [area, title, targetText, weeklyAction, ...rest] = text
@@ -401,8 +433,7 @@ export const createPersonalComposer = (
     );
   });
 
-  command('personalreminders', async (ctx) => {
-    const text = arg(ctx);
+  command('personalreminders', async (ctx, text) => {
     const { store } = await load(text === 'on');
     const state = await store.update((state) => {
       const settings = state.reminders;
@@ -436,8 +467,7 @@ export const createPersonalComposer = (
     );
   });
 
-  command('coaching', async (ctx) => {
-    const text = arg(ctx);
+  command('coaching', async (ctx, text) => {
     const data = await load();
     if (text === 'off') {
       await data.store.update((state) => {
@@ -516,7 +546,19 @@ export const createPersonalComposer = (
       return next();
     await guard((ctx) => capture(ctx, ctx.message!.text!))(ctx);
   });
-  return composer;
+  const buttons = createPersonalButtons({
+    guard,
+    load,
+    capture,
+    showPlan,
+    showFocus: (ctx) => focusView(ctx),
+    openTask: openTaskById,
+    showWeek,
+  });
+  const combined = new Composer<BotContext>();
+  combined.use(buttons);
+  combined.use(composer);
+  return combined;
 };
 
 class PersonalInputError extends Error {}

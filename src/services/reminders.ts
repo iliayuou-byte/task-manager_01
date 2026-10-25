@@ -10,11 +10,12 @@ import {
   morningKeyboard,
   morningText,
 } from './morningChecklist.js';
+import { getPersonalStore, personalEnabled } from './personalStore.js';
 import { queryTasks } from './queryTasks.js';
 import { saveTasks } from './saveTasks.js';
 import { rememberTaskNumbers } from './taskNumbers.js';
 import { pruneUsageStats } from './usageStats.js';
-import { profileUsers, runForUser } from './userScope.js';
+import { profileOwner, profileUsers, runForUser } from './userScope.js';
 
 export const parseReminderTimes = (input: string): string[] => {
   if (input === 'off') return [];
@@ -169,8 +170,14 @@ const checkUserWakeSchedule = async (
   const date = formatInTimeZone(now, timezone, 'yyyy-MM-dd');
   const clock = formatInTimeZone(now, timezone, 'HH:mm');
   const weekday = Number(formatInTimeZone(now, timezone, 'i'));
+  const personal =
+    personalEnabled() && userId === profileOwner()
+      ? await (await getPersonalStore()).read()
+      : undefined;
+  const managedRoutine = personal?.reminders.routine === true;
 
   if (
+    !managedRoutine &&
     weekday === 5 &&
     metadata.wake_friday_prompt_sent !== date &&
     isDue(clock, metadata.wake_friday_prompt_time || '21:00')
@@ -198,8 +205,9 @@ const checkUserWakeSchedule = async (
     metadata.wake_weekend_mode_week === weekendFriday
       ? metadata.wake_weekend_mode
       : undefined;
-  const wakeTime =
-    weekday <= 5
+  const wakeTime = managedRoutine
+    ? personal!.reminders.morning
+    : weekday <= 5
       ? weekdayWakeTime
       : weekendMode === 'sober'
         ? soberWakeTime
@@ -234,7 +242,11 @@ const checkUserWakeSchedule = async (
           : `⏰ Подъём — ${wakeTime}. Если вчера отдых затянулся, вставай спокойно: вода, душ, без самобичевания.${tvResult}`;
     let morningMessageId: number | undefined;
     let items: string[] | undefined;
-    if (weekday <= 5 && metadata.morning_enabled !== 'false') {
+    if (
+      !managedRoutine &&
+      weekday <= 5 &&
+      metadata.morning_enabled !== 'false'
+    ) {
       items = morningItems(metadata);
       const morningMessage = await bot.api.sendMessage(
         userId,
@@ -242,7 +254,7 @@ const checkUserWakeSchedule = async (
         { reply_markup: morningKeyboard(date, items, []) },
       );
       morningMessageId = morningMessage.message_id;
-    } else await bot.api.sendMessage(userId, message);
+    } else if (!managedRoutine) await bot.api.sendMessage(userId, message);
     const latest = await queryTasks();
     latest.metadata.wake_last_sent = date;
     if (morningMessageId !== undefined && items) {

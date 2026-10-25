@@ -1,6 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 
 export const MENU = {
+  personal: '🧭 Мой день',
   today: '📋 Сегодня',
   plan: '📅 План на сегодня',
   all: '📚 Все дела',
@@ -14,8 +15,10 @@ export const MENU = {
   back: '⬅️ Назад',
 } as const;
 
-export const mainInlineKeyboard = () =>
-  new InlineKeyboard()
+export const mainInlineKeyboard = (personal = false) => {
+  const keyboard = new InlineKeyboard();
+  if (personal) keyboard.text(MENU.personal, 'pui:home').row();
+  return keyboard
     .text(MENU.today, 'menu:today')
     .text(MENU.all, 'menu:all')
     .row()
@@ -26,6 +29,7 @@ export const mainInlineKeyboard = () =>
     .text(MENU.chat, 'menu:chat')
     .row()
     .text(MENU.plan, 'menu:calendar:today');
+};
 
 export const settingsKeyboard = () =>
   new InlineKeyboard()

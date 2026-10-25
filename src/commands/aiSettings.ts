@@ -27,6 +27,9 @@ interface State {
 }
 const pending = new Map<string, State>();
 const key = (ctx: BotContext) => `${ctx.from!.id}:${ctx.chat!.id}`;
+export const cancelAiSettings = (ctx: BotContext) => {
+  if (ctx.from && ctx.chat) pending.delete(key(ctx));
+};
 const stateFor = (ctx: BotContext, metadata: Metadata): State => {
   for (const [id, state] of pending)
     if (state.expires < Date.now()) pending.delete(id);

@@ -15,6 +15,7 @@ const keys = [
   'TELEGRAM_BOT_ALLOWLIST',
   'FILE_PATH',
   'STORAGE_PROVIDER',
+  'PERSONAL_SYSTEM_ENABLED',
 ] as const;
 let original: Array<string | undefined>;
 beforeEach(() => {
@@ -22,6 +23,7 @@ beforeEach(() => {
   process.env.BOT_OWNER_ID = '111';
   process.env.TELEGRAM_BOT_ALLOWLIST = '222,111';
   process.env.STORAGE_PROVIDER = 'github';
+  process.env.PERSONAL_SYSTEM_ENABLED = 'false';
   process.env.FILE_PATH =
     'https://github.com/example/data/blob/main/tasks/task-table.md';
 });
@@ -178,6 +180,50 @@ test('reminders route each user own tasks and last-sent settings, even if anothe
       '2026-10-06T09:00',
     );
   } finally {
+    query.mockRestore();
+    save.mockRestore();
+  }
+});
+
+test('the personal routine replaces only the owner legacy wake message', async () => {
+  process.env.PERSONAL_SYSTEM_ENABLED = 'true';
+  let state = createPersonalState(111);
+  Object.assign(state.reminders, { routine: true, morning: '08:00' });
+  const store = new personalStorage.PersonalStore(111, {
+    read: async () => ({ state: structuredClone(state) }),
+    write: async (next) => {
+      state = structuredClone(next);
+    },
+  });
+  const personal = spyOn(personalStorage, 'getPersonalStore').mockResolvedValue(
+    store,
+  );
+  const query = spyOn(
+    GitHubStorageProvider.prototype,
+    'queryTasks',
+  ).mockImplementation(async () => ({
+    taskData: { completed: [], uncompleted: [] },
+    metadata: { timezone: 'Europe/Berlin' },
+  }));
+  const save = spyOn(
+    GitHubStorageProvider.prototype,
+    'saveTasks',
+  ).mockResolvedValue(true);
+  const sent: number[] = [];
+  const bot = {
+    api: {
+      sendMessage: async (id: number) => {
+        sent.push(id);
+        return { message_id: 1 };
+      },
+    },
+  } as unknown as Bot<BotContext>;
+  try {
+    await checkReminders(bot, new Date('2026-10-26T07:00:00Z'));
+    expect(sent).not.toContain(111);
+    expect(sent).toContain(222);
+  } finally {
+    personal.mockRestore();
     query.mockRestore();
     save.mockRestore();
   }

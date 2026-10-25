@@ -7,7 +7,11 @@ import { aboutCommand } from './commands/about.js';
 import { addCommand, addSceneComposer } from './commands/add.js';
 import { registerAiSettings } from './commands/aiSettings.js';
 import { registerAssistant } from './commands/assistant.js';
-import { brainCommand, registerBrainActions } from './commands/brain.js';
+import {
+  brainCommand,
+  cancelBrainDrafts,
+  registerBrainActions,
+} from './commands/brain.js';
 import { registerCalendarSchedule } from './commands/calendarSchedule.js';
 import { clearCompletedCommand } from './commands/clearCompleted.js';
 import { completeCommand } from './commands/complete.js';
@@ -20,6 +24,7 @@ import { quadrantCommand } from './commands/quadrant.js';
 import { remindersCommand } from './commands/reminders.js';
 import { removeCommand } from './commands/remove.js';
 import {
+  cancelRemovalDrafts,
   registerSelectedRemoval,
   removeByNumbers,
 } from './commands/removeSelected.js';
@@ -50,6 +55,7 @@ import {
 } from './services/usageStats.js';
 import { profileOwner, runForUser } from './services/userScope.js';
 import { START_WORDING } from './views/generalView.js';
+import { MENU } from './views/menuView.js';
 
 profileOwner();
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -102,14 +108,17 @@ opComposer.use(async (ctx, next) => {
 });
 opComposer.use(usageStatsMiddleware());
 opComposer.command('stats', (ctx) => usageStatsCommand(ctx));
-registerContextKeyboard(opComposer);
 opComposer.use(async (ctx, next) => {
   if (
     /^\/(?:system|inbox|focus|morning|late|lowenergy|normal|step|evening|week|goals|personalreminders|coaching|cancel)(?:@\w+)?(?:\s|$)/.test(
       ctx.message?.text ?? '',
-    )
+    ) ||
+    ctx.callbackQuery?.data?.startsWith('pui:') ||
+    ctx.message?.text === MENU.personal
   ) {
     clearMenuInput(ctx);
+    cancelBrainDrafts(ctx);
+    cancelRemovalDrafts(ctx);
     ctx.session.awaitingAdd = undefined;
     ctx.session.editScene = undefined;
   }
@@ -125,6 +134,7 @@ opComposer.use(
     capturePlainText: false,
   }),
 );
+registerContextKeyboard(opComposer);
 opComposer.command(Command.START, menuCommand);
 opComposer.command(Command.MENU, menuCommand);
 registerAiSettings(opComposer);

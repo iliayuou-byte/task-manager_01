@@ -25,7 +25,9 @@ const checkPersonal = async () => {
   if (personalRunning) return;
   personalRunning = true;
   try {
-    await checkPersonalReminders((id, text) => bot.api.sendMessage(id, text));
+    await checkPersonalReminders((id, text, options) =>
+      bot.api.sendMessage(id, text, options),
+    );
   } catch {
     logger.warnWithContext({
       op: 'PERSONAL_REMINDERS',

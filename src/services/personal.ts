@@ -5,6 +5,14 @@ import { parseDurationInMinutes } from '../utils/index.js';
 
 export const AREAS = ['study', 'gym', 'project', 'social', 'life'] as const;
 export type Area = (typeof AREAS)[number];
+export const MORNING_START_ITEMS = [
+  'Встать и открыть шторы',
+  'Выпить воды',
+  'Умыться и почистить зубы',
+  'Пять минут лёгкой разминки',
+  'Позавтракать и собрать вещи',
+  'Посмотреть пары и три результата дня',
+];
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const note = z.string().max(400);
 const daySchema = z.object({
@@ -13,6 +21,9 @@ const daySchema = z.object({
   usedLow: z.boolean().default(false),
   priorities: z.array(z.string()).max(3).default([]),
   morningAt: z.string().optional(),
+  awakeAt: z.string().optional(),
+  morningItems: z.array(z.string().min(1).max(60)).max(8).default([]),
+  morningDone: z.array(z.number().int().min(0).max(7)).max(8).default([]),
   firstStep: note.default(''),
   review: z
     .object({
@@ -41,10 +52,18 @@ export const personalStateSchema = z.object({
       }),
     )
     .default([]),
+  morningItems: z
+    .array(z.string().trim().min(1).max(60))
+    .min(1)
+    .max(8)
+    .default(MORNING_START_ITEMS),
   reminders: z
     .object({
       enabled: z.boolean().default(false),
       morning: clock.default('09:00'),
+      wakeRepeats: z.boolean().default(false),
+      routine: z.boolean().default(false),
+      bedtime: clock.optional(),
       evening: clock.default('21:30'),
       weekly: clock.default('18:00'),
       weeklyDay: z.number().int().min(0).max(6).default(0),
@@ -190,7 +209,8 @@ export const buildCoachingExport = (
 };
 export interface Reminder {
   key: string;
-  kind: 'morning' | 'evening' | 'weekly' | 'event';
+  kind: 'morning' | 'wake' | 'bedtime' | 'evening' | 'weekly' | 'event';
+  date?: string;
   task?: Task;
 }
 export const dueReminders = (
@@ -219,8 +239,31 @@ export const dueReminders = (
   const inWindow = (time: string) =>
     current >= parseDurationInMinutes(time) &&
     current < parseDurationInMinutes(time) + 5;
-  if (inWindow(settings.morning) && !state.days[date]?.morningAt)
+  const morningAcknowledged = settings.wakeRepeats
+    ? state.days[date]?.awakeAt
+    : state.days[date]?.morningAt;
+  if (inWindow(settings.morning) && !morningAcknowledged)
     reminders.push({ key: `morning:${date}`, kind: 'morning' });
+  if (settings.wakeRepeats) {
+    for (const wakeDate of [shiftDate(date, -1), date]) {
+      if (state.days[wakeDate]?.awakeAt) continue;
+      const wake = fromZonedTime(
+        `${wakeDate}T${settings.morning}:00`,
+        timezone,
+      ).getTime();
+      for (const offset of [5, 10]) {
+        const elapsed = (now.getTime() - wake) / 60000 - offset;
+        if (elapsed >= 0 && elapsed < 5)
+          reminders.push({
+            key: `wake:${wakeDate}:${offset}`,
+            kind: 'wake',
+            date: wakeDate,
+          });
+      }
+    }
+  }
+  if (settings.bedtime && inWindow(settings.bedtime))
+    reminders.push({ key: `bedtime:${date}`, kind: 'bedtime' });
   if (inWindow(settings.evening) && !state.days[date]?.review)
     reminders.push({ key: `evening:${date}`, kind: 'evening' });
   if (

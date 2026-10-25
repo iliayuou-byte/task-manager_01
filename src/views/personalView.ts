@@ -1,4 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz';
+import { InlineKeyboard } from 'grammy';
 import type { Task } from '../core/types.js';
 import {
   AREAS,
@@ -6,6 +7,7 @@ import {
   type DayPlan,
   localDate,
   type PersonalState,
+  type Reminder,
   weeklySummary,
 } from '../services/personal.js';
 
@@ -16,7 +18,46 @@ export const AREA_LABELS = {
   social: 'Общение',
   life: 'Быт',
 };
+
+export const personalNavigation = () =>
+  new InlineKeyboard()
+    .text('⬅️ Мой день', 'pui:home')
+    .text('🏠 Меню', 'menu:home');
+
+export const personalPlanKeyboard = (tasks: Task[]) => {
+  const keyboard = new InlineKeyboard();
+  for (const task of tasks)
+    keyboard.text(`✓ ${task.name.slice(0, 40)}`, `pd:${task.id}`).row();
+  return keyboard
+    .text('🎯 Приоритеты', 'pui:focus')
+    .text('👣 Первый шаг', 'pui:step')
+    .row()
+    .text('⚡ Режим дня', 'pui:mode')
+    .text('🌅 Моё утро', 'pui:checklist')
+    .row()
+    .text('⬅️ Назад', 'pui:home')
+    .text('🏠 Меню', 'menu:home');
+};
+
+export const personalReminderKeyboard = (reminder: Reminder, date: string) => {
+  const keyboard = new InlineKeyboard();
+  if (reminder.kind === 'morning' || reminder.kind === 'wake')
+    keyboard
+      .text('🙌 Я встал', `pui:awake:${reminder.date ?? date}`)
+      .text('☀️ Моё утро', 'pui:checklist')
+      .row();
+  if (reminder.kind === 'evening')
+    keyboard.text('🌙 Подвести итог', 'pui:evening');
+  else if (reminder.kind === 'bedtime')
+    keyboard.text('⏰ Будильники iPhone', 'pui:iphone');
+  else if (reminder.kind === 'weekly')
+    keyboard.text('📊 Итоги недели', 'pui:week');
+  else keyboard.text('📋 Мой план', 'pui:plan');
+  return keyboard;
+};
 export const PERSONAL_HELP = `Личная система
+
+Открой «Мой день» в меню: план, приоритеты, утро, обзор, учёба, зал и режим доступны кнопками.
 
 Быстрая запись без ИИ: /inbox текст задачи.
 /inbox — входящие; /inbox текст #study — быстро записать
@@ -73,7 +114,7 @@ export const planMessage = (
     day.firstStep ||
     (active[0]
       ? `Открой «${active[0].name}» и сделай первые 5 минут.`
-      : 'Встань, выпей воды и выбери одно дело через /focus.');
+      : 'Встань, выпей воды и выбери одно дело кнопкой «Приоритеты».');
   return [
     `${mode} · ${date} · ${currentTime}`,
     day.mode === 'late'
@@ -87,7 +128,7 @@ export const planMessage = (
           (task, index) =>
             `${index + 1}. ${task ? `${task.completed ? '✓' : '○'} ${task.name}` : 'Задача удалена — обнови /focus'}`,
         )
-      : ['Пока не выбраны — /focus']),
+      : ['Пока не выбраны — нажми «Приоритеты».']),
     `\nПервый шаг: ${first}`,
     '\nПредстоящие события:',
     ...(events.length
@@ -99,7 +140,7 @@ export const planMessage = (
           `\nПрошедших слотов: ${missed.length}. Проверь их через /today; при необходимости измени время через /edit.`,
         ]
       : []),
-    '\n/morning · /focus · /late · /lowenergy · /evening',
+    '\nВыбрать приоритеты, первый шаг и режим дня можно кнопками ниже.',
   ].join('\n');
 };
 

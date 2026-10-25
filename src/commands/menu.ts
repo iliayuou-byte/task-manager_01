@@ -18,6 +18,7 @@ import {
   morningKeyboard,
   morningText,
 } from '../services/morningChecklist.js';
+import { personalEnabled } from '../services/personalStore.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
 import { saveTasks } from '../services/saveTasks.js';
@@ -26,6 +27,7 @@ import {
   rememberTaskNumbers,
   taskFingerprint,
 } from '../services/taskNumbers.js';
+import { profileOwner } from '../services/userScope.js';
 import { logAndReplyError, markTaskCompleted } from '../utils/index.js';
 import {
   ADD_TEXT,
@@ -101,7 +103,11 @@ export const menuCommand = async (ctx: BotContext) => {
     ctx,
     HOME_TEXT,
     {
-      reply_markup: mainInlineKeyboard(),
+      reply_markup: mainInlineKeyboard(
+        personalEnabled() &&
+          ctx.chat?.type === 'private' &&
+          ctx.from?.id === profileOwner(),
+      ),
       parse_mode: 'HTML',
     },
     { navigation: false },
@@ -596,6 +602,21 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
     parse_mode: 'HTML',
     reply_markup: keyboard,
   });
+};
+
+export const openTaskById = async (ctx: BotContext, id: string) => {
+  const { taskData } = await queryTasks();
+  const task = taskData.uncompleted.find(
+    (task) => task.id === id && !task.completed,
+  );
+  if (!task)
+    return panelReply(
+      ctx,
+      'Дело уже завершено или удалено. Открой список заново.',
+    );
+  const state = newState(ctx);
+  state.tasks = numberedTasks(taskData.uncompleted);
+  return card(ctx, state, task);
 };
 
 export const registerMenu = (composer: Composer<BotContext>) => {
