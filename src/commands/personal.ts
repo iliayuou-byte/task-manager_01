@@ -548,6 +548,11 @@ export const createPersonalComposer = (
   });
   const buttons = createPersonalButtons({
     guard,
+    canManage: (ctx) =>
+      deps.enabled() &&
+      ctx.from?.id === deps.ownerId &&
+      ctx.chat?.type === 'private' &&
+      ctx.chat.id === deps.ownerId,
     load,
     capture,
     showPlan,

@@ -1,6 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import type { Task } from '../core/types.js';
 import type { DayPlan, PersonalState } from '../services/personal.js';
+import { MENU } from './menuView.js';
 import { AREA_LABELS } from './personalView.js';
 
 export const PERSONAL_TIME_LABELS = {
@@ -51,6 +52,8 @@ export const personalHomeKeyboard = () =>
     .row()
     .text('📥 Входящие', 'pui:inbox')
     .text('🔔 Мой режим', 'pui:settings')
+    .row()
+    .text(MENU.now, 'menu:now')
     .row()
     .text('🏠 Меню', 'menu:home');
 
@@ -126,10 +129,10 @@ export const personalSettingsMessage = (
   s: PersonalReminders,
   timezone: string,
 ) =>
-  `🔔 Мой режим · ${s.enabled ? 'сигналы включены' : 'сигналы выключены'}\n\nПодъём и план: ${s.morning}${s.wakeRepeats ? ', ещё через 5 и 10 минут до «Я встал»' : ''}\nВечерний обзор: ${s.evening}\nПодготовка ко сну: ${s.bedtime ?? 'выключена'}\nТихие часы: ${s.quietStart}–${s.quietEnd}\nЗа ${s.leadMinutes} мин до задачи или пары\nНедельный итог: ${s.weekly}, день ${s.weeklyDay} (0 — воскресенье)\nЧасовой пояс: ${timezone}\n\nКомпьютер и бот должны работать для доставки Telegram. Прежние напоминания настраиваются отдельно.${s.routine ? '\nНовый распорядок заменяет прежний сигнал подъёма; настройка телевизора сохраняется.' : ''}`;
+  `🔔 Мой режим · ${s.enabled ? 'сигналы включены' : 'сигналы выключены'}\n\nПодъём и план: ${s.morning}${s.wakeRepeats ? ', ещё через 5 и 10 минут до «Я встал»' : ''}\nВечерний обзор: ${s.evening}\nПодготовка ко сну: ${s.bedtime ?? 'выключена'}\nТихие часы: ${s.quietStart}–${s.quietEnd}\nЗа ${s.leadMinutes} мин до задачи или пары\nНедельный итог: ${s.weekly}, день ${s.weeklyDay} (0 — воскресенье)\nЧасовой пояс: ${timezone}\n\nКомпьютер и бот должны работать для доставки Telegram. Дневные сводки со списком дел настраиваются отдельно.${s.routine ? '\nНовый распорядок заменяет прежний сигнал подъёма; настройка телевизора сохраняется.' : '\nПрежний подъём ещё действует отдельно: его настройки — на последней странице. Для перехода открой «Настроить мой распорядок» и проверь предлагаемые значения перед применением.'}`;
 
-export const personalSettingsKeyboard = (s: PersonalReminders) =>
-  new InlineKeyboard()
+export const personalSettingsKeyboard = (s: PersonalReminders) => {
+  const keyboard = new InlineKeyboard()
     .text('✨ Настроить мой распорядок', 'pui:preset')
     .row()
     .text(
@@ -160,10 +163,15 @@ export const personalSettingsKeyboard = (s: PersonalReminders) =>
     .row()
     .text('📊 Итоги недели', 'pui:week')
     .row()
-    .text('Другие напоминания', 'menu:reminders')
-    .row()
-    .text('⬅️ Назад', 'pui:home')
-    .text('🏠 Меню', 'menu:home');
+    .text('🔔 Дневные сводки', 'menu:reminders')
+    .row();
+  if (!s.routine)
+    keyboard
+      .text('⏰ Прежний подъём', 'menu:wake')
+      .text('☀️ Прежний список', 'menu:morning')
+      .row();
+  return keyboard.text('⬅️ Назад', 'pui:home').text('🏠 Меню', 'menu:home');
+};
 
 export const personalTimePickerMessage = (
   field: keyof typeof PERSONAL_TIME_LABELS,

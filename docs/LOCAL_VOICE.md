@@ -7,7 +7,7 @@
 Остановите бот через Ctrl+C. В папке проекта выполните:
 
 ```sh
-git pull origin feature/daily-copilot-now
+git pull origin feat/personal-planning
 bun install
 python3.12 --version
 python3.12 -m venv .venv
@@ -26,7 +26,7 @@ python3.12 -m venv .venv
 После установки Python 3.12 в PowerShell из папки проекта:
 
 ```powershell
-git pull origin feature/daily-copilot-now
+git pull origin feat/personal-planning
 bun install
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-voice.txt

@@ -24,6 +24,7 @@ const fixture = (
   const panels: Array<Record<string, unknown>> = [];
   const documents: string[] = [];
   const passed: string[] = [];
+  const passedCallbacks: string[] = [];
   const metadata: Metadata = { timezone: 'Europe/Berlin' };
   const store = new PersonalStore(1, {
     read: async () => ({
@@ -106,6 +107,9 @@ const fixture = (
   bot.on('message:text', (ctx) => {
     passed.push(ctx.message.text);
   });
+  bot.on('callback_query:data', (ctx) => {
+    passedCallbacks.push(ctx.callbackQuery.data);
+  });
   let updateId = 0;
   const message = (text: string, id = 1, group = false) =>
     bot.handleUpdate({
@@ -174,6 +178,7 @@ const fixture = (
     messages,
     documents,
     passed,
+    passedCallbacks,
     metadata,
     message,
     callback,
@@ -200,6 +205,36 @@ const fixture = (
 };
 
 describe('Personal Telegram workflow', () => {
+  it('redirects retired morning settings only for the owner with a managed routine', async () => {
+    const f = fixture(true, false);
+    await f.callback('menu:wake');
+    expect(f.passedCallbacks).toEqual(['menu:wake']);
+    await f.store.update((state) => {
+      state.reminders.routine = true;
+      state.reminders.morning = '07:00';
+    });
+    const before = await f.store.read();
+    for (const action of [
+      'menu:wake',
+      'menu:morning',
+      'menu:wakeinput:old:weekday',
+      'menu:morningdelete:old:0',
+    ]) {
+      await f.callback(action);
+      expect(f.messages[f.messages.length - 1]).toContain(
+        'Подъём и план: 07:00',
+      );
+    }
+    expect(await f.store.read()).toEqual(before);
+    expect(f.metadata.morning_items).toBeUndefined();
+    await f.callback('menu:morning', 2);
+    expect(f.passedCallbacks).toEqual(['menu:wake', 'menu:morning']);
+    await f.callback('pui:items');
+    await f.callback('menu:morning');
+    await f.message('обычный текст после старой кнопки');
+    expect(f.passed).toContain('обычный текст после старой кнопки');
+    expect((await f.store.read()).morningItems).toEqual(before.morningItems);
+  });
   it('removes shortcut controls and returns retired buttons to the day menu without changing settings', async () => {
     const f = fixture(true, false);
     const before = await f.store.read();

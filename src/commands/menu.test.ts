@@ -17,8 +17,10 @@ import {
   retryPendingInputsOnce,
 } from '../services/pendingInputs.js';
 import { createPersonalState } from '../services/personal.js';
+import * as personalStorage from '../services/personalStore.js';
 import { PersonalStore } from '../services/personalStore.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
+import * as profiles from '../services/userScope.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
 import { registerAssistant } from './assistant.js';
@@ -625,6 +627,81 @@ test('main keyboard has seven sections; settings replaces it and back restores i
     MENU.chat,
     MENU.plan,
   ]);
+});
+
+test('personal owner has one entry per main section and a separate calendar', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(612));
+  const f = fixture(612, true);
+  await f.text(MENU.home);
+  expect(f.labels()).toEqual([
+    MENU.personal,
+    MENU.all,
+    MENU.add,
+    '📅 Календарь',
+    MENU.chat,
+    MENU.settings,
+  ]);
+  await f.tap('Календарь');
+  expect(f.calls[f.calls.length - 1]?.text).toContain('📅 Календарь');
+  expect(f.labels().some((label) => label.includes('Неделя'))).toBe(true);
+  await f.click('menu:home');
+  await f.tap('Настройки');
+  expect(f.labels()).toContain('🔔 Мой режим');
+  expect(f.labels()).toContain('🔔 Дневные сводки');
+  expect(
+    f.labels().some((label) => /Режим подъёма|Утренний список/.test(label)),
+  ).toBe(false);
+  await f.tap('Мой режим');
+  expect(f.calls[f.calls.length - 1]?.text).toContain('Подъём и план:');
+});
+
+test('task list filters remain reachable when Today is empty', async () => {
+  const f = fixture(613);
+  for (const task of f.data().taskData.uncompleted) task.date = '2099-01-01';
+  await f.click('menu:all');
+  await f.tap('Сегодня');
+  expect(f.labels().some((label) => label.includes('Первое'))).toBe(false);
+  await f.tap('Все дела');
+  expect(f.labels().some((label) => label.includes('Первое'))).toBe(true);
+});
+
+test('personal owner can save both legacy editors before adopting the new routine', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(615));
+  const f = fixture(615, true);
+  const openLegacyPage = async () => {
+    await f.click('pui:settings');
+    await f.tap('▶️');
+    await f.tap('▶️');
+  };
+  await openLegacyPage();
+  await f.tap('Прежний подъём');
+  await f.tap('Ввести подъём');
+  await f.text('07:00');
+  expect(f.data().metadata.wake_weekday_time).toBe('07:00');
+  await openLegacyPage();
+  await f.tap('Прежний список');
+  await f.tap('✏️ 1');
+  await f.text('Открыть шторы');
+  expect(JSON.parse(f.data().metadata.morning_items || '[]')[0]).toBe(
+    'Открыть шторы',
+  );
+  await f.click('pui:home');
+  await f.tap('▶️');
+  await f.tap('Что сейчас');
+  expect(f.calls[f.calls.length - 1]?.text).toContain('🎯 Сейчас:');
+});
+
+test('personal feature does not replace guest settings', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(612));
+  const f = fixture(614);
+  await f.text(MENU.home);
+  expect(f.labels()).not.toContain(MENU.personal);
+  await f.tap('Настройки');
+  expect(f.labels()).toContain('⏰ Режим подъёма');
+  expect(f.labels()).toContain('☀️ Утренний список');
 });
 
 test('task card bottom keyboard runs actions and list back without interpreting buttons as new tasks', async () => {

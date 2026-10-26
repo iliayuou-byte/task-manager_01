@@ -4,6 +4,7 @@ export const MENU = {
   personal: '🧭 Мой день',
   today: '📋 Сегодня',
   plan: '📅 План на сегодня',
+  calendar: '📅 Календарь',
   all: '📚 Все дела',
   add: '➕ Добавить',
   now: '🎯 Что сейчас',
@@ -17,7 +18,16 @@ export const MENU = {
 
 export const mainInlineKeyboard = (personal = false) => {
   const keyboard = new InlineKeyboard();
-  if (personal) keyboard.text(MENU.personal, 'pui:home').row();
+  if (personal)
+    return keyboard
+      .text(MENU.personal, 'pui:home')
+      .text(MENU.all, 'menu:all')
+      .row()
+      .text(MENU.add, 'menu:add')
+      .text(MENU.calendar, 'menu:calendar')
+      .row()
+      .text(MENU.chat, 'menu:chat')
+      .text(MENU.settings, 'menu:settings');
   return keyboard
     .text(MENU.today, 'menu:today')
     .text(MENU.all, 'menu:all')
@@ -31,14 +41,22 @@ export const mainInlineKeyboard = (personal = false) => {
     .text(MENU.plan, 'menu:calendar:today');
 };
 
-export const settingsKeyboard = () =>
-  new InlineKeyboard()
-    .text('🔔 Напоминания', 'menu:reminders')
-    .row()
-    .text('⏰ Режим подъёма', 'menu:wake')
-    .row()
-    .text('☀️ Утренний список', 'menu:morning')
-    .row()
+export const settingsKeyboard = (personal = false) => {
+  const keyboard = new InlineKeyboard();
+  if (personal)
+    keyboard
+      .text('🔔 Мой режим', 'pui:settings')
+      .text('🔔 Дневные сводки', 'menu:reminders')
+      .row();
+  else
+    keyboard
+      .text('🔔 Напоминания', 'menu:reminders')
+      .row()
+      .text('⏰ Режим подъёма', 'menu:wake')
+      .row()
+      .text('☀️ Утренний список', 'menu:morning')
+      .row();
+  return keyboard
     .text('📺 Утренний телевизор', 'menu:tv')
     .row()
     .text('🧠 Приоритеты ИИ', 'ai:open')
@@ -47,6 +65,7 @@ export const settingsKeyboard = () =>
     .row()
     .text('⬅️ Назад', 'menu:home')
     .text('🏠 Меню', 'menu:home');
+};
 
 export const timeKeyboard = (id: string, hour?: string): InlineKeyboard => {
   const keyboard = new InlineKeyboard();

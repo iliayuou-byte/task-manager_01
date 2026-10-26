@@ -176,7 +176,7 @@ legacy daily digests and the separate Fire TV enable setting remain in effect.
 
 ### Context keyboards
 
-`services/contextKeyboard.ts` paginates callback-backed inline screens and retains compatibility with text taps on older reply keyboards. Mount it behind allowlist and before commands/scenes. `panelReply` remembers mappings only after successful send. The main keyboard has seven sections, plus an owner-only personal day entry when enabled. Personal draft cancellation runs before context-keyboard routing; time-picker pagination preserves its draft. Preserve callback ownership/expiry validation; synthetic callbacks must never call Telegram answerCallbackQuery. Voice progress panels cannot be edited into a newer menu: later transcription cleanup must only remove its own status.
+`services/contextKeyboard.ts` paginates callback-backed inline screens and retains compatibility with text taps on older reply keyboards. Mount it behind allowlist and before commands/scenes. `panelReply` remembers mappings only after successful send. Personal draft cancellation runs before context-keyboard routing; time-picker pagination preserves its draft. Preserve callback ownership/expiry validation; synthetic callbacks must never call Telegram answerCallbackQuery. Voice progress panels cannot be edited into a newer menu: later transcription cleanup must only remove its own status. For menu consolidation and legacy settings compatibility, read `docs/BOT_UI.md` → “Единые входы в разделы”.
 
 ### Voice failures
 

@@ -24,10 +24,12 @@ export const buildContextKeyboard = (
   },
 ) => {
   const buttons = rows.flat().filter((button) => button.callback_data);
-  const footer = buttons.filter((button) =>
-    /^(?:⬅️ )?Назад$|^(?:🏠 )?Меню$|^◀|^▶|^Next|^✏️ Ввести HH:MM$/.test(
-      button.text,
-    ),
+  const footer = buttons.filter(
+    (button) =>
+      /^menu:filter(?:today|all)$/.test(button.callback_data ?? '') ||
+      /^(?:⬅️ )?Назад$|^(?:🏠 )?Меню$|^◀|^▶|^Next|^✏️ Ввести HH:MM$/.test(
+        button.text,
+      ),
   );
   const actions = buttons.filter((button) => !footer.includes(button));
   let visible = actions;

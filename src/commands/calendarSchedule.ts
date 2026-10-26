@@ -50,8 +50,8 @@ const keyboard = (state: CalendarState, includeSave = false) => {
       .text('✅ Импортировать расписание', `calendar:save:${state.id}`)
       .row();
   else if (state.step !== 'upload') {
-    result.text('📅 План на сегодня', `calendar:today:${state.id}`).row();
-    result.text('🗓 План на неделю', `calendar:week:now:${state.id}`).row();
+    result.text('📅 Сегодня в календаре', `calendar:today:${state.id}`).row();
+    result.text('🗓 Неделя в календаре', `calendar:week:now:${state.id}`).row();
     if (state.weekStart)
       result
         .text('◀️ Неделя', `calendar:week:prev:${state.id}`)
@@ -257,6 +257,7 @@ export const registerCalendarSchedule = (composer: Composer<BotContext>) => {
     if (ctx.chat.type !== 'private') return next();
     const text = ctx.message.text.trim();
     if (text === MENU.plan) return showToday(ctx);
+    if (text === MENU.calendar) return showCalendar(ctx);
     const state = states.get(chatKey(ctx));
     if (text.startsWith('/') || Object.values(MENU).includes(text as never)) {
       states.delete(chatKey(ctx));

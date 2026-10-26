@@ -8,7 +8,7 @@ AI is used by the existing `/add` parser, not by `/now`.
 
 ## First local run
 
-1. Install Bun and clone this repository, then check out `feature/daily-copilot-now`.
+1. Install Bun and clone this repository, then check out `feat/personal-planning`.
 2. Run `bun install` and copy `.env.example` to `.env`.
 3. Set `TELEGRAM_BOT_TOKEN` from BotFather and `TELEGRAM_BOT_ALLOWLIST` to your numeric Telegram **user ID**.
 4. Create a separate **private** GitHub repository for personal tasks. The code repository is public. Set `FILE_PATH` to `https://github.com/OWNER/PRIVATE-REPO/blob/main/task-table.md`. The bot initializes the file if missing.

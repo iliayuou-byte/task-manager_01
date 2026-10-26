@@ -92,6 +92,12 @@ export const clearMenuInput = (ctx: BotContext) => {
   if (state) state.input = undefined;
 };
 
+const hasPersonalMenu = (ctx: BotContext) =>
+  personalEnabled() &&
+  ctx.chat?.type === 'private' &&
+  ctx.chat.id === ctx.from?.id &&
+  ctx.from.id === profileOwner();
+
 export const menuCommand = async (ctx: BotContext) => {
   ctx.session.assistant = undefined;
   cancelBrainDrafts(ctx);
@@ -103,11 +109,7 @@ export const menuCommand = async (ctx: BotContext) => {
     ctx,
     HOME_TEXT,
     {
-      reply_markup: mainInlineKeyboard(
-        personalEnabled() &&
-          ctx.chat?.type === 'private' &&
-          ctx.from?.id === profileOwner(),
-      ),
+      reply_markup: mainInlineKeyboard(hasPersonalMenu(ctx)),
       parse_mode: 'HTML',
     },
     { navigation: false },
@@ -141,8 +143,6 @@ export const showTasks = async (ctx: BotContext, today = false, page = 0) => {
   ]);
   for (const message of messages.slice(0, -1)) await panelReply(ctx, message);
   rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, tasks);
-  if (!tasks.length)
-    return await panelReply(ctx, messages[messages.length - 1]);
   const lastPage = Math.max(0, Math.ceil(tasks.length / 6) - 1);
   await showPicker(
     ctx,
@@ -174,10 +174,18 @@ const showPicker = async (
   if (page > 0) keyboard.text('◀️', `menu:page:${state.id}:${page - 1}`);
   if ((page + 1) * 6 < tasks.length)
     keyboard.text('▶️', `menu:page:${state.id}:${page + 1}`);
-  keyboard.row().text('⬅️ Назад', 'menu:home').text('🏠 Меню', 'menu:home');
+  keyboard
+    .row()
+    .text(
+      state.today ? MENU.all : MENU.today,
+      state.today ? 'menu:filterall' : 'menu:filtertoday',
+    )
+    .row()
+    .text('⬅️ Назад', 'menu:home')
+    .text('🏠 Меню', 'menu:home');
   await panelReply(
     ctx,
-    `${list ? `${list}\n\n` : ''}Выбирай дело — разберёмся с ним.`,
+    `${list ? `${list}\n\n` : ''}${tasks.length ? 'Выбирай дело — разберёмся с ним.' : 'В этом списке пока пусто.'}`,
     { reply_markup: keyboard },
   );
 };
@@ -219,7 +227,7 @@ const showReminders = async (ctx: BotContext) => {
     .text('Назад', 'menu:settings');
   await panelReply(
     ctx,
-    `🔔 Напоминания ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nВ выбранное время пришлю сообщение со списком дел.`,
+    `🔔 ${hasPersonalMenu(ctx) ? 'Дневные сводки' : 'Напоминания'} ${enabled ? 'включены' : 'выключены'}\nЧасовой пояс: ${metadata.timezone || 'не задан'}\n\nВ выбранное время пришлю сообщение со списком дел.`,
     { reply_markup: keyboard },
   );
 };
@@ -638,7 +646,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           newState(ctx);
           return await panelReply(ctx, SETTINGS_TEXT, {
             parse_mode: 'HTML',
-            reply_markup: settingsKeyboard(),
+            reply_markup: settingsKeyboard(hasPersonalMenu(ctx)),
           });
         }
         if (text === MENU.now) {
@@ -715,8 +723,10 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       ctx.session.editScene = undefined;
       if (action === 'home') return await menuCommand(ctx);
       if (action === 'back') return await backToTask(ctx);
-      if (action === 'today') return await showTasks(ctx, true);
-      if (action === 'all') return await showTasks(ctx);
+      if (action === 'today' || action === 'filtertoday')
+        return await showTasks(ctx, true);
+      if (action === 'all' || action === 'filterall')
+        return await showTasks(ctx);
       if (action === 'add') return await showAddPrompt(ctx);
       if (action === 'now') {
         newState(ctx);
@@ -730,7 +740,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         newState(ctx);
         return await panelReply(ctx, SETTINGS_TEXT, {
           parse_mode: 'HTML',
-          reply_markup: settingsKeyboard(),
+          reply_markup: settingsKeyboard(hasPersonalMenu(ctx)),
         });
       }
       if (action === 'reminders') return await showReminders(ctx);

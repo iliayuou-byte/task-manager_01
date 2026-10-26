@@ -38,6 +38,7 @@ import {
   personalTimePickerMessage,
 } from '../views/personalButtonsView.js';
 import { personalNavigation } from '../views/personalView.js';
+import { clearMenuInput } from './menu.js';
 
 export interface PersonalSnapshot {
   store: PersonalStore;
@@ -51,6 +52,7 @@ export interface PersonalSnapshot {
 type Handler = (ctx: BotContext) => Promise<unknown>;
 interface Dependencies {
   guard(handler: Handler): Handler;
+  canManage(ctx: BotContext): boolean;
   load(ids?: boolean): Promise<PersonalSnapshot>;
   capture(
     ctx: BotContext,
@@ -131,7 +133,12 @@ export const createPersonalButtons = (deps: Dependencies) => {
   const home = async (ctx: BotContext) => {
     cancel(ctx);
     const data = await deps.load();
-    await render(ctx, personalHomeMessage(data.date), personalHomeKeyboard());
+    await render(
+      ctx,
+      personalHomeMessage(data.date),
+      personalHomeKeyboard(),
+      true,
+    );
   };
   const tasks = async (ctx: BotContext, area?: 'study' | 'gym', page = 0) => {
     const data = await deps.load(true);
@@ -236,6 +243,22 @@ export const createPersonalButtons = (deps: Dependencies) => {
     return next();
   });
   composer.hears(MENU.personal, deps.guard(home));
+  composer
+    .filter(deps.canManage)
+    .callbackQuery(
+      /^menu:(?:wake|wakeinput|wakeearlier|wakelater|wakereset|morning|morningadd|morningedit|morningdelete|morningreset|morningtoggle)(?::.*)?$/,
+      (ctx, next) =>
+        deps.guard(async (ctx) => {
+          const data = await deps.load();
+          if (!data.state.reminders.routine) return next();
+          clearMenuInput(ctx);
+          ctx.session.awaitingAdd = undefined;
+          ctx.session.editScene = undefined;
+          cancel(ctx);
+          await ctx.answerCallbackQuery();
+          return settings(ctx);
+        })(ctx),
+    );
   composer.callbackQuery(
     /^pui:(.+)$/,
     deps.guard(async (ctx) => {

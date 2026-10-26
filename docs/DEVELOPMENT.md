@@ -73,10 +73,28 @@ bun test src/commands/menu.test.ts
 
 ```powershell
 cd C:\Users\iliay\task-manager_01
-git pull --ff-only origin feature/daily-copilot-now
+git pull --ff-only origin feat/personal-planning
+bun install --frozen-lockfile
+bun src/scripts/fixWindowsLauncher.ts
+bun run build
 ```
 
-Затем перезапустите задачу планировщика `TaskManagerBot`. Не редактируйте исходники отдельно на сервере: изменения должны идти через GitHub, чтобы Mac и Windows не расходились.
+Перед обновлением остановите бот (`Ctrl+C` или задачу планировщика `TaskManagerBot`).
+После успешной сборки запустите его прежним запускатором или `bun run start:polling`.
+Рабочая ветка — `feat/personal-planning`.
+
+`fixWindowsLauncher.ts` один раз исправляет старую проверку ветки в локальных
+`.ps1`, `.cmd` и `.bat` внутри `scripts/windows`, включая вложенные папки.
+Он заменяет буквальное имя `feature/daily-copilot-now` на `feat/personal-planning`
+во всех упоминаниях выбранных скриптов, сохраняя кодировку и окончания строк.
+Перед записью оригиналы копируются в игнорируемую папку
+`runtime/windows-launcher-backups/<дата-идентификатор>/` с прежней структурой папок.
+Повторный запуск ничего не меняет, если старая ветка уже заменена. При ошибке
+прочитайте сообщение и не запускайте старый скрипт до исправления.
+
+Это правит существующие локальные файлы; сами запускаторы, `.env`, календарь
+и данные бота в GitHub не отправляются. Не редактируйте исходники отдельно на
+сервере: изменения должны идти через GitHub, чтобы Mac и Windows не расходились.
 
 ## Полезные правила проекта
 
