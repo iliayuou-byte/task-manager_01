@@ -200,28 +200,19 @@ const fixture = (
 };
 
 describe('Personal Telegram workflow', () => {
-  it('offers only a fixed clipboard plan for iPhone and warns when times differ', async () => {
+  it('removes shortcut controls and returns retired buttons to the day menu without changing settings', async () => {
     const f = fixture(true, false);
-    await f.store.update((state) => {
-      state.reminders.morning = '09:00';
-    });
+    const before = await f.store.read();
+    await f.callback('pui:settings');
+    await f.tap('▶️');
+    const settingsPanels = f.panels.filter((panel) => panel.reply_markup);
+    expect(JSON.stringify(settingsPanels)).not.toContain('pui:iphone');
     await f.callback('pui:iphone');
-    expect(f.messages[f.messages.length - 1]).toContain(
-      'будильники ещё не изменены',
-    );
-    expect(f.messages[f.messages.length - 1]).toContain('В боте подъём 09:00');
-    const markup = f.panels[f.panels.length - 1]?.reply_markup as {
-      inline_keyboard: Array<Array<{ copy_text?: { text: string } }>>;
-    };
+    expect(f.messages[f.messages.length - 1]).toContain('🧭 Мой день');
     expect(
-      markup.inline_keyboard
-        .flat()
-        .filter((b) => b.copy_text)
-        .map((b) => b.copy_text?.text),
-    ).toEqual([
-      'TMALARM1\non\n08:00\n08:05\n08:10',
-      'TMALARM1\noff\n08:00\n08:05\n08:10',
-    ]);
+      f.buttons().some((button) => Object.hasOwn(button, 'copy_text')),
+    ).toBe(false);
+    expect(await f.store.read()).toEqual(before);
     expect(f.tasks().uncompleted).toHaveLength(0);
   });
   it('cancels a task while its read is pending without writing or replacing Home', async () => {

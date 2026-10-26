@@ -160,8 +160,6 @@ export const personalSettingsKeyboard = (s: PersonalReminders) =>
     .row()
     .text('📊 Итоги недели', 'pui:week')
     .row()
-    .text('⏰ Будильники iPhone', 'pui:iphone')
-    .row()
     .text('Другие напоминания', 'menu:reminders')
     .row()
     .text('⬅️ Назад', 'pui:home')

@@ -48,8 +48,6 @@ export const personalReminderKeyboard = (reminder: Reminder, date: string) => {
       .row();
   if (reminder.kind === 'evening')
     keyboard.text('🌙 Подвести итог', 'pui:evening');
-  else if (reminder.kind === 'bedtime')
-    keyboard.text('⏰ Будильники iPhone', 'pui:iphone');
   else if (reminder.kind === 'weekly')
     keyboard.text('📊 Итоги недели', 'pui:week');
   else keyboard.text('📋 Мой план', 'pui:plan');

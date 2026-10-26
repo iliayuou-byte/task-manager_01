@@ -14,10 +14,6 @@ import {
   shiftDate,
 } from '../services/personal.js';
 import type { PersonalStore } from '../services/personalStore.js';
-import {
-  iphoneAlarmKeyboard,
-  iphoneAlarmMessage,
-} from '../views/iphoneAlarmView.js';
 import { MENU, navigationKeyboard } from '../views/menuView.js';
 import {
   PERSONAL_BUTTON_TEXT,
@@ -347,7 +343,8 @@ export const createPersonalButtons = (deps: Dependencies) => {
         return;
       }
       cancel(ctx);
-      if (action === 'home') return home(ctx);
+      // Retained Telegram messages can still carry the removed shortcut button.
+      if (action === 'home' || action === 'iphone') return home(ctx);
       if (action === 'plan') return deps.showPlan(ctx, undefined, true);
       if (action === 'focus') return deps.showFocus(ctx);
       if (action === 'settings') return settings(ctx);
@@ -482,14 +479,6 @@ export const createPersonalButtons = (deps: Dependencies) => {
             : [...day.morningDone, index];
         });
         return checklist(ctx);
-      }
-      if (action === 'iphone') {
-        const data = await deps.load();
-        return render(
-          ctx,
-          iphoneAlarmMessage(data.state.reminders.morning),
-          iphoneAlarmKeyboard(),
-        );
       }
     }),
   );

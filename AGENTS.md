@@ -102,7 +102,7 @@ src/
 - `personalNotifications.ts`: Persistent claims and delivery for personal reminders.
 - `calendarLinks.ts`: Reconciles returned event IDs against fresh task snapshots without recreating events.
 - `commands/personal.ts` and `views/personalView.ts`: Owner-only private-chat workflows.
-- `commands/personalButtons.ts` and `views/personalButtonsView.ts`: Expiring personal input drafts and pure screens; check draft identity after asynchronous reads. `views/iphoneAlarmView.ts` provides a fixed, non-secret clipboard plan for a locally configured iPhone shortcut; it never claims device access or execution.
+- `commands/personalButtons.ts` and `views/personalButtonsView.ts`: Expiring personal input drafts and pure screens; check draft identity after asynchronous reads.
 - `personalCalendar.ts`: Adapts imported ICS slots for personal plans and event reminders without copying them into saved tasks or coaching statistics.
 - `polling.ts`: Local long polling with minute schedulers and pending-input retries, including Windows. Refuses active webhooks; `clear:webhook` explicitly removes one without dropping updates.
   - `githubWebhookHandler.ts`: Processes incoming webhooks.
@@ -283,5 +283,5 @@ The personal day snapshots its morning items on first access; edits apply to the
 `awakeAt` stops the two extra Telegram signals independently of opening the plan.
 `reminders.routine` suppresses only the owner legacy wake/checklist messages; Fire TV
 uses its separate enable flag at the managed wake time. Old state defaults to no
-extra wake or bedtime signals. iPhone Clock changes require a manually configured
-and manually launched local shortcut; copying text is never proof of execution.
+extra wake or bedtime signals. Personal reminder controls manage Telegram
+notifications; system alarms are configured separately on the phone.
