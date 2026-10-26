@@ -43,7 +43,6 @@ import {
   settingsKeyboard,
   timeKeyboard,
 } from '../views/menuView.js';
-import { openAssistant } from './assistant.js';
 import { cancelBrainDrafts, processBrainInput } from './brain.js';
 import { showNow } from './now.js';
 import { cancelRemovalDrafts, previewRemoval } from './removeSelected.js';
@@ -99,7 +98,6 @@ const hasPersonalMenu = (ctx: BotContext) =>
   ctx.from.id === profileOwner();
 
 export const menuCommand = async (ctx: BotContext) => {
-  ctx.session.assistant = undefined;
   cancelBrainDrafts(ctx);
   cancelRemovalDrafts(ctx);
   newState(ctx);
@@ -633,20 +631,24 @@ export const openTaskById = async (
 };
 
 export const registerMenu = (composer: Composer<BotContext>) => {
+  // Retired entry points can remain in Telegram messages and reply keyboards.
+  composer.command('talk', async (ctx) => {
+    if (ctx.chat.type === 'private') await menuCommand(ctx);
+  });
+  composer.callbackQuery(/^assistant:/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (ctx.chat?.type === 'private') await menuCommand(ctx);
+  });
   composer.on('message:text', async (ctx, next) => {
     if (ctx.chat.type !== 'private') return next();
     const text = ctx.message.text.trim();
     try {
+      if (text === MENU.retiredChat) return await menuCommand(ctx);
       if (Object.values(MENU).some((label) => label === text)) {
-        ctx.session.assistant = undefined;
         ctx.session.awaitingAdd = undefined;
         ctx.session.editScene = undefined;
         if (text === MENU.home) return await menuCommand(ctx);
         if (text === MENU.back) return await backToTask(ctx);
-        if (text === MENU.chat) {
-          newState(ctx);
-          return await openAssistant(ctx);
-        }
         if (text === MENU.settings) {
           newState(ctx);
           return await panelReply(ctx, SETTINGS_TEXT, {
@@ -705,7 +707,6 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       return;
     }
     const [action, id, value] = ctx.match[1].split(':');
-    ctx.session.assistant = undefined;
     const state = states.get(ctx.from.id);
     if (
       id &&
@@ -737,10 +738,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         newState(ctx);
         return await showNow(ctx);
       }
-      if (action === 'chat') {
-        newState(ctx);
-        return await openAssistant(ctx);
-      }
+      if (action === 'chat') return await menuCommand(ctx);
       if (action === 'settings') {
         newState(ctx);
         return await panelReply(ctx, SETTINGS_TEXT, {

@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from 'bun:test';
 import * as ai from '../clients/ai.js';
 import type { BotContext } from '../middlewares/session.js';
+import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
 import { voiceMessage } from './voice.js';
 
 test('failed 56-second voice clears status, preserves recording and explains overload', async () => {
@@ -50,7 +51,7 @@ test('failed 56-second voice clears status, preserves recording and explains ove
   }
 });
 
-test('leaving conversation during voice transcription does not create task drafts', async () => {
+test('voice creates a task preview without saving automatically', async () => {
   const provider = process.env.AI_PROVIDER;
   const voiceProvider = process.env.VOICE_TRANSCRIPTION_PROVIDER;
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -59,7 +60,7 @@ test('leaving conversation during voice transcription does not create task draft
   process.env.TELEGRAM_BOT_TOKEN = 'test-token';
   const texts: string[] = [];
   const ctx = {
-    session: { assistant: { id: 'test', expires: Date.now() + 60000 } },
+    session: {},
     chat: { id: 8202, type: 'private' },
     from: { id: 8202 },
     message: { message_id: 52, voice: { file_id: 'voice', duration: 10 } },
@@ -76,20 +77,34 @@ test('leaving conversation during voice transcription does not create task draft
     new Response(new Uint8Array([1])),
   );
   const transcription = spyOn(ai, 'transcribeVoice').mockImplementation(
-    async () => {
-      ctx.session.assistant = undefined;
-      return 'Мне плохо, не хочу ничего делать';
-    },
+    async () => 'Разобрать одну задачу по Accounting',
   );
-  const brain = spyOn(ai, 'generateBrainTasks').mockResolvedValue([]);
+  const query = spyOn(
+    GitHubStorageProvider.prototype,
+    'queryTasks',
+  ).mockResolvedValue({
+    taskData: { uncompleted: [], completed: [] },
+    metadata: { timezone: 'Europe/Berlin' },
+  });
+  const save = spyOn(
+    GitHubStorageProvider.prototype,
+    'saveTasks',
+  ).mockResolvedValue(true);
+  const brain = spyOn(ai, 'generateBrainTasks').mockResolvedValue([
+    { name: 'Разобрать одну задачу по Accounting', completed: false, tags: [] },
+  ]);
   try {
     await voiceMessage(ctx);
-    expect(brain).not.toHaveBeenCalled();
-    expect(texts.some((text) => text.includes('Расшифровка'))).toBe(false);
+    expect(brain).toHaveBeenCalledTimes(1);
+    expect(texts.some((text) => text.includes('Расшифровка'))).toBe(true);
+    expect(texts.some((text) => text.includes('Accounting'))).toBe(true);
+    expect(save).not.toHaveBeenCalled();
   } finally {
     fetchMock.mockRestore();
     transcription.mockRestore();
     brain.mockRestore();
+    query.mockRestore();
+    save.mockRestore();
     if (provider === undefined) delete process.env.AI_PROVIDER;
     else process.env.AI_PROVIDER = provider;
     if (voiceProvider === undefined)

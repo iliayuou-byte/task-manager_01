@@ -11,7 +11,8 @@ export const MENU = {
   done: '✅ Выполнено',
   remove: '🗑 Удалить',
   settings: '⚙️ Настройки',
-  chat: '💬 Поговорить',
+  // Recognition only: older reply keyboards still send this label.
+  retiredChat: '💬 Поговорить',
   home: '🏠 Меню',
   back: '⬅️ Назад',
 } as const;
@@ -26,7 +27,6 @@ export const mainInlineKeyboard = (personal = false) => {
       .text(MENU.add, 'menu:add')
       .text(MENU.calendar, 'menu:calendar')
       .row()
-      .text(MENU.chat, 'menu:chat')
       .text(MENU.settings, 'menu:settings');
   return keyboard
     .text(MENU.today, 'menu:today')
@@ -36,7 +36,6 @@ export const mainInlineKeyboard = (personal = false) => {
     .text(MENU.now, 'menu:now')
     .row()
     .text(MENU.settings, 'menu:settings')
-    .text(MENU.chat, 'menu:chat')
     .row()
     .text(MENU.plan, 'menu:calendar:today');
 };

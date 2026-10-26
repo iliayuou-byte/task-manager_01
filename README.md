@@ -49,7 +49,7 @@ On Windows, `bun run start:polling` runs the bot and a local minute scheduler
 without a public webhook URL. See [Russian setup and usage guide](docs/personal-system-ru.md)
 for commands, privacy boundaries, migration and rollback.
 
-This branch also preserves the existing Copilot voice, assistant, calendar imports,
+This branch also preserves the existing Copilot voice, calendar imports,
 morning checklists and Fire TV features. `/inbox text` captures without AI;
 `/personalreminders` configures the new daily system while `/reminders` retains
 the existing digest schedule. Polling refuses an active webhook; `bun run clear:webhook`
@@ -219,9 +219,9 @@ See [COPILOT_SETUP.md](COPILOT_SETUP.md) for `/now` and local polling setup.
 
 Новая `.env.example` предлагает локальный Whisper для голосовых и OpenAI для разбора текста. Для запуска нужно установить Python-зависимости и настроить API-ключ: [инструкция для Mac и Windows](docs/LOCAL_VOICE.md). Существующая `.env` автоматически не изменяется. При неудачном разборе текст сохраняется на 24 часа; `/retry` повторяет его без новой расшифровки. В polling-режиме временные сбои повторяются максимум два раза, ошибки оплаты и авторизации — только вручную. Результат всегда требует подтверждения.
 
-### Разговор с помощником и общие дела
+### Работа с делами
 
-Кнопка «💬 Поговорить» или `/talk` открывает разговор с контекстом текущих задач и памятью последних шести обменов репликами. При просьбе изменить дела помощник предлагает подготовить подтверждаемый черновик. «Забыть разговор» очищает локальную память; выход в меню останавливает показ ожидающего ответа. `ASSISTANT_STYLE` задаёт дополнительный стиль. Через подключение GitHub в ChatGPT можно работать с тем же файлом задач: [инструкция](docs/SHARED_ASSISTANT.md).
+Разговорная функция «Поговорить» удалена. Текст и голос используются для подготовки задач с подтверждением. Старые кнопки разговора и `/talk` возвращают в главное меню. Через подключение GitHub в ChatGPT можно работать с тем же файлом задач: [инструкция](docs/SHARED_ASSISTANT.md).
 
 Важность определяется влиянием на цели и серьёзностью последствий. Срочность — близким сроком и последствиями промедления. Сообщайте контекст («до выхода из дома», «до завтра»), чтобы предложение ИИ было точнее.
 

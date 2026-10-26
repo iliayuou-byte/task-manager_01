@@ -104,7 +104,7 @@ export const registerAiSettings = (composer: Composer<BotContext>) => {
       );
     }
   });
-  composer.callbackQuery(/^menu:/, async (ctx, next) => {
+  composer.callbackQuery(/^(?:menu|assistant):/, async (ctx, next) => {
     pending.delete(key(ctx));
     return next();
   });

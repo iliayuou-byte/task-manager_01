@@ -38,7 +38,6 @@ const createState = (ctx: BotContext): CalendarState => {
     expires: Date.now() + 30 * 60_000,
   };
   states.set(chatKey(ctx), state);
-  ctx.session.assistant = undefined;
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
   return state;

@@ -201,9 +201,9 @@ legacy daily digests and the separate Fire TV enable setting remain in effect.
 
 `services/taskTags.ts` owns the domain taxonomy, AI prompt and whitelist normalization. AI-generated task tags use the existing generation request; explicit user hashtags remain supported. New list/single tasks and edited names use these tags. Display tags in the matrix, draft and task card. Vocabulary validation does not guarantee semantic correctness; users can edit Tags. Do not automatically overwrite existing tags in storage when changing the vocabulary. See `docs/BOT_UI.md` for message/button editing.
 
-### Conversational assistant
+### Retired conversation entry points
 
-`commands/assistant.ts` and `/talk` open a private-chat conversation with live task context. `services/assistantHistory.ts` stores at most six exchanges per owner/chat in an ignored runtime file, expiring after seven days. The model returns discussion or a suggested add/remove input, never executes writes. Suggested operations go through existing confirmation drafts. Menu/command navigation cancels late responses; history reset must leave tasks intact. Voice routes to this mode only while active. Log only safe diagnostics. See `docs/SHARED_ASSISTANT.md` for tone settings and shared GitHub access from ChatGPT; this does not synchronize ChatGPT account history.
+The conversational assistant, AI reply generator and history store have been removed. `commands/menu.ts` redirects legacy `/talk`, `menu:chat`, `assistant:*` callbacks and the old reply-keyboard text to Home without task writes or AI calls. Do not restore them as task input. Voice continues through the task draft/removal flows. Existing local assistant-history files are left untouched and are no longer read; see `docs/SHARED_ASSISTANT.md` for shared GitHub access and obsolete settings.
 
 ### User profiles
 

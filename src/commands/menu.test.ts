@@ -9,7 +9,6 @@ import { googleCalendarService } from '../clients/google-calendar.js';
 import type { Metadata, TaskData } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { editSceneComposer } from '../scenes/editTaskScene.js';
-import { AssistantHistory } from '../services/assistantHistory.js';
 import { registerContextKeyboard } from '../services/contextKeyboard.js';
 import {
   PendingInputStore,
@@ -27,7 +26,6 @@ import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider
 import * as profiles from '../services/userScope.js';
 import { MENU } from '../views/menuView.js';
 import { registerAiSettings } from './aiSettings.js';
-import { registerAssistant } from './assistant.js';
 import { registerBrainActions } from './brain.js';
 import { registerCalendarSchedule } from './calendarSchedule.js';
 import { completeCommand } from './complete.js';
@@ -148,7 +146,6 @@ const fixture = (user: number, personal = false) => {
   registerTaskPickerAction(bot);
   bot.command('complete', completeCommand);
   bot.use(editSceneComposer);
-  registerAssistant(bot);
   const from = { id: user, is_bot: false, first_name: 'User' };
   const message = {
     message_id: 1,
@@ -632,7 +629,6 @@ test('main keyboard has seven sections; settings replaces it and back restores i
     MENU.add,
     MENU.now,
     MENU.settings,
-    MENU.chat,
     MENU.plan,
   ]);
   await f.tap('Настройки');
@@ -652,7 +648,6 @@ test('main keyboard has seven sections; settings replaces it and back restores i
     MENU.add,
     MENU.now,
     MENU.settings,
-    MENU.chat,
     MENU.plan,
   ]);
 });
@@ -667,7 +662,6 @@ test('personal owner has one entry per main section and a separate calendar', as
     MENU.all,
     MENU.add,
     '📅 Календарь',
-    MENU.chat,
     MENU.settings,
   ]);
   await f.tap('Календарь');
@@ -982,93 +976,53 @@ test('background retry is allowlisted, produces only a draft, and Home pauses re
   }
 });
 
-test('assistant conversation uses live tasks, remembers turns, clears memory and drafts only on request', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'assistant-menu-'));
-  const previous = process.env.ASSISTANT_HISTORY_PATH;
-  process.env.ASSISTANT_HISTORY_PATH = join(directory, 'history.json');
-  try {
+test('retired conversation entries return to menu without task drafts or writes', async () => {
+  const generation = spyOn(aiClient, 'generateBrainTasks').mockResolvedValue(
+    [],
+  );
+  spies.push(generation);
+  for (const entry of [
+    '💬 Поговорить',
+    '/talk',
+    'menu:chat',
+    'assistant:forget',
+    'assistant:draft:old',
+  ]) {
     const f = fixture(570);
-    const conversation = spyOn(
-      aiClient,
-      'generateAssistantReply',
-    ).mockResolvedValue({
-      reply: 'Начни с одного небольшого шага.',
-      action: 'none',
-      taskInput: '',
-    });
-    spies.push(conversation);
-    await f.text(MENU.chat);
-    await f.text('Сил мало, за что взяться?');
-    expect(conversation.mock.calls[0][2].uncompleted[0].name).toBe('Первое');
-    expect(f.data().taskData.uncompleted).toHaveLength(2);
-    conversation.mockResolvedValue({
-      reply: 'Подготовим черновик.',
-      action: 'add',
-      taskInput: 'Купить хлеб',
-    });
-    await f.text('Добавь купить хлеб');
-    expect(conversation.mock.calls[1][1]).toHaveLength(2);
-    expect(f.labels()).toContain('📝 Подготовить черновик');
-    expect(f.data().taskData.uncompleted).toHaveLength(2);
-    const generation = spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
-      { name: 'Купить хлеб', completed: false, tags: [] },
-    ]);
-    spies.push(generation);
-    await f.tap('Подготовить черновик');
-    expect(generation).toHaveBeenCalledTimes(1);
-    expect(f.data().taskData.uncompleted).toHaveLength(2);
-    expect(f.labels()).toContain('✅ Сохранить');
-    await f.text(MENU.chat);
-    await f.tap('Забыть разговор');
-    expect(new AssistantHistory().get(570, 570)).toEqual([]);
-    await f.text(MENU.home);
-    await f.text('Не должно уйти в разговор');
-    expect(conversation).toHaveBeenCalledTimes(2);
-  } finally {
-    if (previous === undefined) delete process.env.ASSISTANT_HISTORY_PATH;
-    else process.env.ASSISTANT_HISTORY_PATH = previous;
-    rmSync(directory, { recursive: true, force: true });
+    const before = structuredClone(f.data());
+    await f.text(MENU.add);
+    if (entry.includes(':')) await f.click(entry);
+    else await f.text(entry);
+    expect(f.labels()).toContain(MENU.all);
+    expect(f.labels()).not.toContain('💬 Поговорить');
+    expect(f.labels()).not.toContain('🧹 Забыть разговор');
+    await f.text('Текст после выхода');
+    expect(generation).not.toHaveBeenCalled();
+    expect(f.data()).toEqual(before);
   }
 });
 
-test('Home during assistant generation suppresses late replies and memory writes', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'assistant-cancel-'));
-  const previous = process.env.ASSISTANT_HISTORY_PATH;
-  process.env.ASSISTANT_HISTORY_PATH = join(directory, 'history.json');
-  try {
-    const f = fixture(571);
-    let finish!: (value: {
-      reply: string;
-      action: 'none';
-      taskInput: string;
-    }) => void;
-    let started!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    const conversation = spyOn(
-      aiClient,
-      'generateAssistantReply',
-    ).mockImplementation(() => {
-      started();
-      return new Promise((resolve) => {
-        finish = resolve;
-      });
-    });
-    spies.push(conversation);
-    await f.text(MENU.chat);
-    const reply = f.text('Помоги');
-    await ready;
-    await f.text(MENU.home);
-    finish({ reply: 'LATE RESPONSE', action: 'none', taskInput: '' });
-    await reply;
-    expect(f.calls.some((call) => call.text === 'LATE RESPONSE')).toBe(false);
-    expect(new AssistantHistory().get(571, 571)).toEqual([]);
-    expect(f.labels()).toContain(MENU.chat);
-  } finally {
-    if (previous === undefined) delete process.env.ASSISTANT_HISTORY_PATH;
-    else process.env.ASSISTANT_HISTORY_PATH = previous;
-    rmSync(directory, { recursive: true, force: true });
+test('retired conversation entries cancel pending personal and AI rule input', async () => {
+  const f = fixture(573, true);
+  for (const entry of [
+    '💬 Поговорить',
+    'assistant:forget',
+    'assistant:draft:old',
+  ]) {
+    const leave = () => (entry.includes(':') ? f.click(entry) : f.text(entry));
+    await f.click('ai:open');
+    await f.tap('Мои правила');
+    const tasks = structuredClone(f.data());
+    await leave();
+    expect(f.labels()).toContain(MENU.all);
+    await f.text('Обычный текст после выхода');
+    expect(f.data()).toEqual(tasks);
+    await f.click('pui:step');
+    const personal = await f.personalStore!.read();
+    await leave();
+    expect(f.labels()).toContain(MENU.all);
+    await f.text('Обычный текст после выхода');
+    expect(await f.personalStore!.read()).toEqual(personal);
   }
 });
 

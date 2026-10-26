@@ -6,7 +6,6 @@ import { registerTaskPickerAction } from './actions/taskPicker.js';
 import { aboutCommand } from './commands/about.js';
 import { addCommand, addSceneComposer } from './commands/add.js';
 import { registerAiSettings } from './commands/aiSettings.js';
-import { registerAssistant } from './commands/assistant.js';
 import {
   brainCommand,
   cancelBrainDrafts,
@@ -96,16 +95,6 @@ opComposer.use(async (ctx, next) => {
   if (!ctx.from) return;
   return runForUser(ctx.from.id, next);
 });
-opComposer.use(async (ctx, next) => {
-  if (
-    (ctx.message?.text?.startsWith('/') &&
-      !/^\/talk(?:@\w+)?(?:\s|$)/.test(ctx.message.text)) ||
-    (ctx.callbackQuery?.data &&
-      !ctx.callbackQuery.data.startsWith('assistant:'))
-  )
-    ctx.session.assistant = undefined;
-  return next();
-});
 opComposer.use(usageStatsMiddleware());
 opComposer.command('stats', (ctx) => usageStatsCommand(ctx));
 opComposer.use(async (ctx, next) => {
@@ -165,7 +154,6 @@ opComposer.on('message:text', async (ctx, next) => {
     .trim()
     .match(/^(?:удали|убери|remove|delete)\s+(\d+(?:[\s,]+\d+)*)[.!]?$/i);
   if (match) {
-    ctx.session.assistant = undefined;
     return await removeByNumbers(ctx, match[1]);
   }
   return next();
@@ -177,7 +165,6 @@ opComposer.command(Command.SEARCH, searchCommand);
 registerSortAction(opComposer);
 registerCalendarAction(opComposer);
 registerTaskPickerAction(opComposer);
-registerAssistant(opComposer);
 
 opComposer.callbackQuery(/^tz_(.+)$/, async (ctx) => {
   const value = ctx.match[1];
