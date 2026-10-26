@@ -16,7 +16,11 @@ import {
   registerPendingInputs,
   retryPendingInputsOnce,
 } from '../services/pendingInputs.js';
-import { createPersonalState } from '../services/personal.js';
+import {
+  createPersonalState,
+  dayFor,
+  localDate,
+} from '../services/personal.js';
 import * as personalStorage from '../services/personalStore.js';
 import { PersonalStore } from '../services/personalStore.js';
 import { GitHubStorageProvider } from '../services/storage/GitHubStorageProvider.js';
@@ -37,6 +41,8 @@ afterEach(() => {
 });
 
 const fixture = (user: number, personal = false) => {
+  let nextStorageQuery: (() => Promise<void>) | undefined;
+  let personalStore: PersonalStore | undefined;
   let data: { taskData: TaskData; metadata: Metadata } = {
     taskData: {
       completed: [],
@@ -49,7 +55,12 @@ const fixture = (user: number, personal = false) => {
   };
   spies.push(
     spyOn(GitHubStorageProvider.prototype, 'queryTasks').mockImplementation(
-      async () => structuredClone(data),
+      async () => {
+        const waiting = nextStorageQuery;
+        nextStorageQuery = undefined;
+        await waiting?.();
+        return structuredClone(data);
+      },
     ),
   );
   spies.push(
@@ -112,6 +123,7 @@ const fixture = (user: number, personal = false) => {
         state = structuredClone(next);
       },
     });
+    personalStore = store;
     bot.use(
       createPersonalComposer({
         ownerId: user,
@@ -218,6 +230,22 @@ const fixture = (user: number, personal = false) => {
     labels,
     tap,
     calls,
+    personalStore,
+    pauseStorageQuery: () => {
+      let enter!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      nextStorageQuery = async () => {
+        enter();
+        await waiting;
+      };
+      return { entered, release };
+    },
     data: () => data,
   };
 };
@@ -688,9 +716,34 @@ test('personal owner can save both legacy editors before adopting the new routin
     'Открыть шторы',
   );
   await f.click('pui:home');
+  await f.tap('Ещё');
   await f.tap('▶️');
   await f.tap('Что сейчас');
   expect(f.calls[f.calls.length - 1]?.text).toContain('🎯 Сейчас:');
+});
+
+test('opening the dashboard task preserves a newer evening review during its storage read', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(616));
+  const f = fixture(616, true);
+  f.data().taskData.uncompleted[0].id = 'task';
+  const date = localDate(new Date(), 'Europe/Berlin');
+  await f.personalStore!.update((state) => {
+    dayFor(state, date).priorities = ['task'];
+  });
+  await f.click('pui:home');
+  const action = f.button('Открыть дело');
+  const pending = f.pauseStorageQuery();
+  const request = f.click(action);
+  await pending.entered;
+  try {
+    await f.click('pui:evening');
+  } finally {
+    pending.release();
+    await request;
+  }
+  expect(f.labels()).toContain('3');
+  expect(f.labels().some((label) => label.includes('Изменить'))).toBe(false);
 });
 
 test('personal feature does not replace guest settings', async () => {

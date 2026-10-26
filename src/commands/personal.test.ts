@@ -6,6 +6,7 @@ import { registerContextKeyboard } from '../services/contextKeyboard.js';
 import {
   createDayPlan,
   createPersonalState,
+  dayFor,
   localDate,
   MORNING_START_ITEMS,
 } from '../services/personal.js';
@@ -20,6 +21,8 @@ const fixture = (
   let tasks: TaskData = { completed: [], uncompleted: [] };
   let revision = 0;
   let nextQuery: (() => Promise<void>) | undefined;
+  let nextSave: (() => Promise<void>) | undefined;
+  const nextApi = new Map<string, () => Promise<void>>();
   const messages: string[] = [];
   const panels: Array<Record<string, unknown>> = [];
   const documents: string[] = [];
@@ -55,6 +58,9 @@ const fixture = (
     client: {
       fetch: async (url: string | URL | Request, init?: RequestInit) => {
         const method = String(url).split('/').pop();
+        const waiting = nextApi.get(method ?? '');
+        nextApi.delete(method ?? '');
+        await waiting?.();
         const payload =
           typeof init?.body === 'string'
             ? (JSON.parse(init.body) as Record<string, unknown>)
@@ -96,6 +102,9 @@ const fixture = (
         return { metadata, taskData: structuredClone(tasks) };
       },
       save: async (next) => {
+        const waiting = nextSave;
+        nextSave = undefined;
+        await waiting?.();
         if (saveResult instanceof Error) throw saveResult;
         if (!saveResult) return false;
         tasks = structuredClone(next);
@@ -185,6 +194,36 @@ const fixture = (
     buttons,
     tap,
     panels,
+    pauseNextSave: () => {
+      let enter!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      nextSave = async () => {
+        enter();
+        await waiting;
+      };
+      return { entered, release };
+    },
+    pauseNextApi: (method: 'answerCallbackQuery' | 'sendMessage') => {
+      let enter!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      nextApi.set(method, async () => {
+        enter();
+        await waiting;
+      });
+      return { entered, release };
+    },
     pauseNextQuery: () => {
       let enter!: () => void;
       let release!: () => void;
@@ -205,6 +244,254 @@ const fixture = (
 };
 
 describe('Personal Telegram workflow', () => {
+  it('keeps a newer review open when an already-started completion save succeeds', async () => {
+    const f = fixture(true, false);
+    f.tasks().uncompleted.push({
+      id: 'task',
+      name: 'Конспект',
+      completed: false,
+      tags: [],
+    });
+    const date = localDate(new Date(), 'Europe/Berlin');
+    await f.store.update((state) => {
+      dayFor(state, date).priorities = ['task'];
+    });
+    await f.callback('pui:home');
+    const done = f.buttons().find((b) => b.text.includes('Готово'))!
+      .callback_data!;
+    const pending = f.pauseNextSave();
+    const completion = f.callback(done);
+    await pending.entered;
+    try {
+      await f.callback('pui:evening');
+    } finally {
+      pending.release();
+      await completion;
+    }
+    expect(f.tasks().uncompleted[0].completed).toBe(true);
+    expect(f.buttons().some((b) => b.text === '3')).toBe(true);
+  });
+  it('cancels dashboard completion before a newer or older callback acknowledgement returns', async () => {
+    for (const delayed of ['newer', 'older']) {
+      const f = fixture(true, false);
+      f.tasks().uncompleted.push({
+        id: 'task',
+        name: 'Конспект',
+        completed: false,
+        tags: [],
+      });
+      const date = localDate(new Date(), 'Europe/Berlin');
+      await f.store.update((state) => {
+        dayFor(state, date).priorities = ['task'];
+      });
+      await f.callback('pui:home');
+      const done = f.buttons().find((b) => b.text.includes('Готово'))!
+        .callback_data!;
+      if (delayed === 'newer') {
+        const query = f.pauseNextQuery();
+        const completion = f.callback(done);
+        await query.entered;
+        const ack = f.pauseNextApi('answerCallbackQuery');
+        const review = f.callback('pui:evening');
+        await ack.entered;
+        try {
+          query.release();
+          await completion;
+          expect(f.tasks().uncompleted[0].completed).toBe(false);
+        } finally {
+          ack.release();
+          await review;
+        }
+      } else {
+        const ack = f.pauseNextApi('answerCallbackQuery');
+        const completion = f.callback(done);
+        await ack.entered;
+        try {
+          await f.callback('pui:evening');
+        } finally {
+          ack.release();
+          await completion;
+        }
+        expect(f.tasks().uncompleted[0].completed).toBe(false);
+      }
+      expect(f.buttons().some((b) => b.text === '3')).toBe(true);
+    }
+  });
+
+  it('keeps evening input after a delayed stale-action warning', async () => {
+    const f = fixture(true, false);
+    f.tasks().uncompleted.push({
+      id: 'task',
+      name: 'Конспект',
+      completed: false,
+      tags: [],
+    });
+    const date = localDate(new Date(), 'Europe/Berlin');
+    await f.store.update((state) => {
+      dayFor(state, date).priorities = ['task'];
+    });
+    await f.callback('pui:home');
+    const done = f.buttons().find((b) => b.text.includes('Готово'))!
+      .callback_data!;
+    f.tasks().uncompleted[0].name = 'Изменённое дело';
+    const warning = f.pauseNextApi('sendMessage');
+    const request = f.callback(done);
+    await warning.entered;
+    try {
+      await f.callback('pui:evening');
+    } finally {
+      warning.release();
+      await request;
+    }
+    expect(f.buttons().some((b) => b.text === '3')).toBe(true);
+    await f.tap('3');
+    await f.message('Написал конспект');
+    expect(f.messages[f.messages.length - 1]).toContain('Что мешало');
+    expect(f.tasks().uncompleted[0].completed).toBe(false);
+  });
+  it('opens a read-only working day and refreshes progress after completing the next priority', async () => {
+    setSystemTime(new Date('2026-10-26T09:15:00+01:00'));
+    try {
+      const f = fixture(true, false);
+      await f.message('/inbox Разобрать конспект');
+      await f.message('/inbox Решить задачу');
+      const [first, second] = f.tasks().uncompleted;
+      await f.store.update((state) => {
+        dayFor(state, '2026-10-26').priorities = [first.id!, second.id!];
+      });
+      f.metadata.calendar_timezone = 'UTC';
+      f.metadata.calendar_events = JSON.stringify([
+        {
+          uid: 'math',
+          date: '2026-10-26',
+          start: '09:00',
+          end: '10:30',
+          title: 'Математика',
+          location: 'Аудитория 12',
+        },
+      ]);
+      const before = await f.store.read();
+      await f.callback('pui:home');
+      expect(f.messages[f.messages.length - 1]).toContain('Приоритеты: 0 из 2');
+      expect(f.messages[f.messages.length - 1]).toContain(
+        '10:00–11:30 · Математика',
+      );
+      expect(f.messages[f.messages.length - 1]).toContain(first.name);
+      expect(
+        f.buttons().filter((button) => button.callback_data !== 'menu:home'),
+      ).toHaveLength(4);
+      expect(await f.store.read()).toEqual(before);
+      const done = f.buttons().find((button) => button.text.includes('Готово'))!
+        .callback_data!;
+      expect(Buffer.byteLength(done)).toBeLessThanOrEqual(64);
+      await f.callback(done);
+      expect(f.messages[f.messages.length - 1]).toContain('Приоритеты: 1 из 2');
+      expect(
+        f.tasks().uncompleted.find((task) => task.id === first.id)?.completed,
+      ).toBe(true);
+      const last = f.buttons().find((button) => button.text.includes('Готово'))!
+        .callback_data!;
+      await f.callback(done);
+      expect(
+        f.tasks().uncompleted.find((task) => task.id === second.id)?.completed,
+      ).toBe(false);
+      await f.callback(last);
+      expect(f.messages[f.messages.length - 1]).toContain('Приоритеты: 2 из 2');
+      expect(f.buttons().some((button) => button.text.includes('обзор'))).toBe(
+        true,
+      );
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  it('rejects another day and guest completion buttons and keeps an empty day actionable', async () => {
+    setSystemTime(new Date('2026-10-26T12:00:00+01:00'));
+    try {
+      const f = fixture(true, false);
+      await f.callback('pui:home');
+      expect(f.messages[f.messages.length - 1]).toContain(
+        'Приоритеты пока не выбраны',
+      );
+      await f.tap('Ещё');
+      await f.tap('Учёба');
+      await f.tap('Добавить');
+      await f.message('Первая задача');
+      const task = f.tasks().uncompleted[0];
+      await f.store.update((state) => {
+        dayFor(state, '2026-10-26').priorities = [task.id!];
+      });
+      await f.callback('pui:home');
+      const done = f.buttons().find((button) => button.text.includes('Готово'))!
+        .callback_data!;
+      await f.callback(done, 2);
+      expect(f.tasks().uncompleted[0].completed).toBe(false);
+      setSystemTime(new Date('2026-10-27T12:00:00+01:00'));
+      await f.callback(done);
+      expect(f.tasks().uncompleted[0].completed).toBe(false);
+      expect(f.messages.join('\n')).toContain('Открой «Мой день» заново');
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  it('does not complete a changed priority or display success after a failed save', async () => {
+    const f = fixture(false, false);
+    f.tasks().uncompleted.push({
+      id: 'task',
+      name: 'Конспект',
+      completed: false,
+      tags: [],
+    });
+    const date = localDate(new Date(), 'Europe/Berlin');
+    await f.store.update((state) => {
+      dayFor(state, date).priorities = ['task'];
+    });
+    await f.callback('pui:home');
+    const old = f.buttons().find((button) => button.text.includes('Готово'))!
+      .callback_data!;
+    f.tasks().uncompleted[0].name = 'Изменённый конспект';
+    await f.callback(old);
+    expect(f.tasks().uncompleted[0].completed).toBe(false);
+    const current = f
+      .buttons()
+      .find((button) => button.text.includes('Готово'))!.callback_data!;
+    await f.callback(current);
+    expect(f.tasks().uncompleted[0].completed).toBe(false);
+    expect(f.messages.join('\n')).not.toContain('Приоритеты: 1 из 1');
+    expect(f.messages[f.messages.length - 1]).toContain(
+      'Изменения не сохранены',
+    );
+  });
+
+  it('keeps a newer review open when dashboard loading or completion is cancelled', async () => {
+    const f = fixture(true, false);
+    f.tasks().uncompleted.push({
+      id: 'task',
+      name: 'Конспект',
+      completed: false,
+      tags: [],
+    });
+    const date = localDate(new Date(), 'Europe/Berlin');
+    await f.store.update((state) => {
+      dayFor(state, date).priorities = ['task'];
+    });
+    await f.callback('pui:home');
+    const done = f.buttons().find((button) => button.text.includes('Готово'))!
+      .callback_data!;
+    for (const action of ['pui:home', done]) {
+      const pending = f.pauseNextQuery();
+      const request = f.callback(action);
+      await pending.entered;
+      await f.callback('pui:evening');
+      pending.release();
+      await request;
+      expect(f.messages[f.messages.length - 1]).toContain(
+        'Сколько сил было сегодня',
+      );
+      expect(f.tasks().uncompleted[0].completed).toBe(false);
+    }
+  });
   it('redirects retired morning settings only for the owner with a managed routine', async () => {
     const f = fixture(true, false);
     await f.callback('menu:wake');
@@ -471,6 +758,7 @@ describe('Personal Telegram workflow', () => {
   it('runs the owner day menu, study inbox and focus through buttons', async () => {
     const f = fixture(true, false);
     await f.callback('pui:home');
+    await f.tap('Ещё');
     await f.tap('Учёба');
     await f.tap('Добавить');
     await f.message('Решить три задачи');

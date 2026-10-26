@@ -104,6 +104,7 @@ src/
 - `commands/personal.ts` and `views/personalView.ts`: Owner-only private-chat workflows.
 - `commands/personalButtons.ts` and `views/personalButtonsView.ts`: Expiring personal input drafts and pure screens; check draft identity after asynchronous reads.
 - `personalCalendar.ts`: Adapts imported ICS slots for personal plans and event reminders without copying them into saved tasks or coaching statistics.
+- `personalDashboard.ts`: Derives the read-only working-day screen from existing priorities, tasks and imported classes. Completion callbacks validate the current date and next-task fingerprint; late responses must preserve newer input flows.
 - `polling.ts`: Local long polling with minute schedulers and pending-input retries, including Windows. Refuses active webhooks; `clear:webhook` explicitly removes one without dropping updates.
   - `githubWebhookHandler.ts`: Processes incoming webhooks.
 

@@ -1,6 +1,9 @@
 import { InlineKeyboard } from 'grammy';
 import type { Task } from '../core/types.js';
 import type { DayPlan, PersonalState } from '../services/personal.js';
+import { shiftDate } from '../services/personal.js';
+import type { PersonalDashboard } from '../services/personalDashboard.js';
+import { taskFingerprint } from '../services/taskNumbers.js';
 import { MENU } from './menuView.js';
 import { AREA_LABELS } from './personalView.js';
 
@@ -13,6 +16,8 @@ export const PERSONAL_TIME_LABELS = {
 };
 
 export const PERSONAL_BUTTON_TEXT = {
+  more: '🧭 Все действия дня\nВыбери нужный раздел.',
+  changedAction: 'Это действие уже изменилось. Открой «Мой день» заново.',
   timeFormat: 'Введи время как 08:30.',
   closedDraft: 'Этот шаг уже закрыт. Открой «Мой день» заново.',
   reviewDayChanged: 'Наступил другой день. Начни обзор заново.',
@@ -36,10 +41,80 @@ export const PERSONAL_BUTTON_TEXT = {
     '🌙 Вечерний обзор\n\nСколько сил было сегодня?\n1 — совсем мало, 5 — много.',
 };
 
-export const personalHomeMessage = (date: string) =>
-  `🧭 Мой день · ${date}\n\nВыбери до трёх результатов, сверяйся с парами и возвращайся к маленькому шагу, когда тяжело начать.`;
+const personalNextActionMessage = (d: PersonalDashboard) => {
+  if (d.nextTask)
+    return `${d.nextTask.name.slice(0, 300)}\n${d.firstStep || (d.mode === 'low' ? 'Начни с 5 минут. После них можно остановиться.' : 'Открой дело и сделай один небольшой шаг.')}`;
+  if (d.total > 0 && d.completed === d.total)
+    return d.reviewDone
+      ? 'Выбранные результаты и обзор завершены. Можно отдохнуть.'
+      : 'Выбранные результаты готовы. Подведи итог дня.';
+  return d.hasTasks
+    ? 'Выбери до трёх результатов — начнём с одного.'
+    : 'Запиши одно небольшое дело во входящие.';
+};
 
-export const personalHomeKeyboard = () =>
+export const personalHomeMessage = (d: PersonalDashboard) => {
+  const lesson = d.nextClass;
+  const when =
+    lesson?.date === d.date
+      ? 'сегодня'
+      : lesson?.date === shiftDate(d.date, 1)
+        ? 'завтра'
+        : lesson?.date;
+  return [
+    `🧭 Мой день · ${d.date} · ${d.time}`,
+    d.mode === 'late'
+      ? '⏳ День продолжается — один шаг на оставшееся время.'
+      : d.mode === 'low'
+        ? '🪫 Бережный режим — достаточно небольшого шага.'
+        : '☀️ Обычный день',
+    '',
+    d.total
+      ? `${'■'.repeat(d.completed)}${'□'.repeat(d.total - d.completed)} Приоритеты: ${d.completed} из ${d.total}`
+      : '🎯 Приоритеты пока не выбраны',
+    `🌅 Утро: ${d.morningDone} из ${d.morningTotal} · Обзор: ${d.reviewDone ? 'готов' : 'впереди'}`,
+    ...(d.missing
+      ? [`Недоступных приоритетов: ${d.missing}. Обнови выбор через «Ещё».`]
+      : []),
+    '',
+    lesson
+      ? `${lesson.current ? '📚 Сейчас пара' : `📚 Ближайшая пара · ${when}`}\n${lesson.time}–${lesson.endTime} · ${lesson.title}${lesson.location ? `\n📍 ${lesson.location}` : ''}`
+      : '📚 В расписании нет предстоящих пар.',
+    '',
+    `👣 Следующее действие\n${personalNextActionMessage(d)}`,
+  ].join('\n');
+};
+
+export const personalHomeKeyboard = (d: PersonalDashboard) => {
+  const keyboard = new InlineKeyboard();
+  if (d.nextTask) {
+    const target = `${d.date}:${taskFingerprint(d.nextTask).slice(0, 20)}`;
+    keyboard
+      .text('▶️ Открыть дело', `pui:next:${target}`)
+      .text('✅ Готово', `pui:done:${target}`);
+  } else if (d.total > 0 && d.completed === d.total)
+    keyboard
+      .text(
+        d.reviewDone ? '📊 Итоги недели' : '🌙 Вечерний обзор',
+        d.reviewDone ? 'pui:week' : 'pui:evening',
+      )
+      .text('🎯 Приоритеты', 'pui:focus');
+  else
+    keyboard
+      .text(
+        d.hasTasks ? '🎯 Выбрать приоритеты' : '➕ Добавить дело',
+        d.hasTasks ? 'pui:focus' : 'pui:add:inbox',
+      )
+      .text('📅 Календарь', 'menu:calendar');
+  return keyboard
+    .row()
+    .text('🌅 Моё утро', 'pui:checklist')
+    .text('⋯ Ещё', 'pui:more')
+    .row()
+    .text('🏠 Меню', 'menu:home');
+};
+
+export const personalMoreKeyboard = () =>
   new InlineKeyboard()
     .text('☀️ План дня', 'pui:plan')
     .text('🎯 Три приоритета', 'pui:focus')
@@ -54,6 +129,12 @@ export const personalHomeKeyboard = () =>
     .text('🔔 Мой режим', 'pui:settings')
     .row()
     .text(MENU.now, 'menu:now')
+    .text('⚡ Режим дня', 'pui:mode')
+    .row()
+    .text('👣 Первый шаг', 'pui:step')
+    .text('📅 Календарь', 'menu:calendar')
+    .row()
+    .text('⬅️ Назад', 'pui:home')
     .row()
     .text('🏠 Меню', 'menu:home');
 

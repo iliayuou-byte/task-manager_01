@@ -548,6 +548,7 @@ export const createPersonalComposer = (
   });
   const buttons = createPersonalButtons({
     guard,
+    save,
     canManage: (ctx) =>
       deps.enabled() &&
       ctx.from?.id === deps.ownerId &&

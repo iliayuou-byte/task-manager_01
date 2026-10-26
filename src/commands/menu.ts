@@ -612,8 +612,13 @@ const card = async (ctx: BotContext, state: MenuState, task: Task) => {
   });
 };
 
-export const openTaskById = async (ctx: BotContext, id: string) => {
+export const openTaskById = async (
+  ctx: BotContext,
+  id: string,
+  active?: () => boolean,
+) => {
   const { taskData } = await queryTasks();
+  if (active && !active()) return;
   const task = taskData.uncompleted.find(
     (task) => task.id === id && !task.completed,
   );

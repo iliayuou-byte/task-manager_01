@@ -13,7 +13,10 @@ import {
   type PersonalState,
   shiftDate,
 } from '../services/personal.js';
+import { buildPersonalDashboard } from '../services/personalDashboard.js';
 import type { PersonalStore } from '../services/personalStore.js';
+import { taskFingerprint } from '../services/taskNumbers.js';
+import { markTaskCompleted } from '../utils/index.js';
 import { MENU, navigationKeyboard } from '../views/menuView.js';
 import {
   PERSONAL_BUTTON_TEXT,
@@ -24,6 +27,7 @@ import {
   personalDayModeKeyboard,
   personalHomeKeyboard,
   personalHomeMessage,
+  personalMoreKeyboard,
   personalReviewConfirmKeyboard,
   personalReviewConfirmMessage,
   personalReviewEnergyKeyboard,
@@ -54,6 +58,7 @@ interface Dependencies {
   guard(handler: Handler): Handler;
   canManage(ctx: BotContext): boolean;
   load(ids?: boolean): Promise<PersonalSnapshot>;
+  save(tasks: TaskData, metadata: Metadata): Promise<void>;
   capture(
     ctx: BotContext,
     text: string,
@@ -66,7 +71,11 @@ interface Dependencies {
   ): Promise<unknown>;
   showFocus(ctx: BotContext): Promise<unknown>;
   showWeek(ctx: BotContext): Promise<unknown>;
-  openTask(ctx: BotContext, id: string): Promise<unknown>;
+  openTask(
+    ctx: BotContext,
+    id: string,
+    active?: () => boolean,
+  ): Promise<unknown>;
 }
 type TimeField = keyof typeof PERSONAL_TIME_LABELS;
 type Review = NonNullable<DayPlan['review']>;
@@ -102,11 +111,27 @@ const replaceMorningTemplate = (
   state.morningItems = [...items];
 };
 
+const dashboard = (data: PersonalSnapshot) =>
+  buildPersonalDashboard(
+    data.state,
+    [...data.taskData.uncompleted, ...data.taskData.completed],
+    data.metadata,
+    data.timezone,
+    data.now,
+  );
+
 export const createPersonalButtons = (deps: Dependencies) => {
   const composer = new Composer<BotContext>();
   const flows = new Map<number, Flow>();
+  const screens = new Map<number, symbol>();
   const cancel = (ctx: BotContext) => {
+    if (ctx.from) screens.delete(ctx.from.id);
     if (ctx.from) flows.delete(ctx.from.id);
+  };
+  const screenRequest = (ctx: BotContext) => {
+    const token = Symbol();
+    screens.set(ctx.from!.id, token);
+    return () => screens.get(ctx.from!.id) === token;
   };
   const current = (ctx: BotContext) => {
     const flow = ctx.from && flows.get(ctx.from.id);
@@ -132,13 +157,11 @@ export const createPersonalButtons = (deps: Dependencies) => {
 
   const home = async (ctx: BotContext) => {
     cancel(ctx);
+    const active = screenRequest(ctx);
     const data = await deps.load();
-    await render(
-      ctx,
-      personalHomeMessage(data.date),
-      personalHomeKeyboard(),
-      true,
-    );
+    if (!active()) return;
+    const view = dashboard(data);
+    await render(ctx, personalHomeMessage(view), personalHomeKeyboard(view));
   };
   const tasks = async (ctx: BotContext, area?: 'study' | 'gym', page = 0) => {
     const data = await deps.load(true);
@@ -231,8 +254,10 @@ export const createPersonalButtons = (deps: Dependencies) => {
     const flow = current(ctx);
     const text = ctx.message?.text?.trim();
     const callback = ctx.callbackQuery?.data;
+    if (callback?.startsWith('pui:')) screens.delete(ctx.from!.id);
     if (
       ctx.message?.voice ||
+      (text && screens.has(ctx.from!.id)) ||
       text?.startsWith('/') ||
       (text && Object.values(MENU).some((label) => label === text)) ||
       (callback &&
@@ -262,8 +287,12 @@ export const createPersonalButtons = (deps: Dependencies) => {
   composer.callbackQuery(
     /^pui:(.+)$/,
     deps.guard(async (ctx) => {
-      await ctx.answerCallbackQuery();
       const [action, value, extra] = ctx.match![1].split(':');
+      const navigation = ['home', 'iphone', 'next', 'done'].includes(action)
+        ? screenRequest(ctx)
+        : undefined;
+      await ctx.answerCallbackQuery();
+      if (navigation && !navigation()) return;
       const flow = current(ctx);
       if (
         [
@@ -368,6 +397,35 @@ export const createPersonalButtons = (deps: Dependencies) => {
       cancel(ctx);
       // Retained Telegram messages can still carry the removed shortcut button.
       if (action === 'home' || action === 'iphone') return home(ctx);
+      if (action === 'more')
+        return render(
+          ctx,
+          PERSONAL_BUTTON_TEXT.more,
+          personalMoreKeyboard(),
+          true,
+        );
+      if (action === 'next' || action === 'done') {
+        const active = screenRequest(ctx);
+        const data = await deps.load();
+        if (!active()) return;
+        const view = dashboard(data);
+        const task = view.nextTask;
+        if (
+          value !== data.date ||
+          !task?.id ||
+          !/^[a-f0-9]{20}$/.test(extra ?? '') ||
+          taskFingerprint(task).slice(0, 20) !== extra
+        ) {
+          await ctx.reply(PERSONAL_BUTTON_TEXT.changedAction);
+          if (active()) return home(ctx);
+          return;
+        }
+        if (action === 'next') return deps.openTask(ctx, task.id, active);
+        markTaskCompleted(task, data.timezone);
+        await deps.save(data.taskData, data.metadata);
+        if (active()) return home(ctx);
+        return;
+      }
       if (action === 'plan') return deps.showPlan(ctx, undefined, true);
       if (action === 'focus') return deps.showFocus(ctx);
       if (action === 'settings') return settings(ctx);
