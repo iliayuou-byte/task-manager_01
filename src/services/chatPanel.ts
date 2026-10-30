@@ -52,7 +52,11 @@ export const panelReply = async (
   ctx: BotContext,
   text: string,
   options?: ReplyOptions,
-  panelOptions: { navigation?: boolean } = {},
+  panelOptions: {
+    navigation?: boolean;
+    preserveRows?: boolean;
+    newMessage?: boolean;
+  } = {},
 ) => {
   if (ctx.chat?.type === 'private' && panelOptions.navigation !== false) {
     const markup = options?.reply_markup;
@@ -88,6 +92,7 @@ export const panelReply = async (
   let markup = options?.reply_markup;
   if (
     ctx.chat?.type === 'private' &&
+    !panelOptions.preserveRows &&
     markup &&
     'inline_keyboard' in markup &&
     markup.inline_keyboard.flat().every((button) => 'callback_data' in button)
@@ -140,6 +145,7 @@ export const panelReply = async (
   const previous = first ? panels.get(chat) : undefined;
   const replyMarkup = options?.reply_markup;
   const canEdit =
+    !panelOptions.newMessage &&
     previous?.editable !== false &&
     previous?.ids.length === 1 &&
     (!replyMarkup || 'inline_keyboard' in replyMarkup);

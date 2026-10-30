@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test';
+import { afterEach, expect, setSystemTime, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,7 +29,7 @@ import { registerAiSettings } from './aiSettings.js';
 import { registerBrainActions } from './brain.js';
 import { registerCalendarSchedule } from './calendarSchedule.js';
 import { completeCommand } from './complete.js';
-import { registerMenu } from './menu.js';
+import { menuCommand, registerMenu } from './menu.js';
 import { createPersonalComposer } from './personal.js';
 import { registerSelectedRemoval } from './removeSelected.js';
 
@@ -38,8 +38,10 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
-const fixture = (user: number, personal = false) => {
+const fixture = (user: number, personal = false, saveResult = true) => {
   let nextStorageQuery: (() => Promise<void>) | undefined;
+  let nextStorageSave: (() => Promise<void>) | undefined;
+  let nextStorageError = false;
   let personalStore: PersonalStore | undefined;
   let data: { taskData: TaskData; metadata: Metadata } = {
     taskData: {
@@ -54,6 +56,10 @@ const fixture = (user: number, personal = false) => {
   spies.push(
     spyOn(GitHubStorageProvider.prototype, 'queryTasks').mockImplementation(
       async () => {
+        if (nextStorageError) {
+          nextStorageError = false;
+          throw new Error('synthetic storage failure');
+        }
         const waiting = nextStorageQuery;
         nextStorageQuery = undefined;
         await waiting?.();
@@ -64,6 +70,10 @@ const fixture = (user: number, personal = false) => {
   spies.push(
     spyOn(GitHubStorageProvider.prototype, 'saveTasks').mockImplementation(
       async (taskData, metadata) => {
+        const waiting = nextStorageSave;
+        nextStorageSave = undefined;
+        await waiting?.();
+        if (!saveResult) return false;
         data = structuredClone({ taskData, metadata });
         return true;
       },
@@ -137,6 +147,8 @@ const fixture = (user: number, personal = false) => {
     );
   }
   registerContextKeyboard(bot);
+  bot.command('start', menuCommand);
+  bot.command('menu', menuCommand);
   registerAiSettings(bot);
   registerCalendarSchedule(bot);
   registerMenu(bot);
@@ -228,6 +240,24 @@ const fixture = (user: number, personal = false) => {
     tap,
     calls,
     personalStore,
+    failNextQuery: () => {
+      nextStorageError = true;
+    },
+    pauseStorageSave: () => {
+      let enter!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      nextStorageSave = async () => {
+        enter();
+        await waiting;
+      };
+      return { entered, release };
+    },
     pauseStorageQuery: () => {
       let enter!: () => void;
       let release!: () => void;
@@ -590,7 +620,7 @@ test('edit input back restores fields and home exits the scene', async () => {
   await f.text(MENU.all);
   await f.click(f.button('1. Первое'));
   await f.click(f.button('Изменить'));
-  await f.click(f.button('Name'));
+  await f.click(f.button('Название'));
   await f.click(f.button('Назад'));
   expect(
     String(
@@ -657,13 +687,18 @@ test('personal owner has one entry per main section and a separate calendar', as
   spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(612));
   const f = fixture(612, true);
   await f.text(MENU.home);
-  expect(f.labels()).toEqual([
-    MENU.personal,
-    MENU.all,
-    MENU.add,
-    '📅 Календарь',
-    MENU.settings,
-  ]);
+  expect(f.labels()).toEqual(
+    expect.arrayContaining([
+      MENU.personal,
+      MENU.all,
+      MENU.add,
+      MENU.calendar,
+      MENU.settings,
+    ]),
+  );
+  expect(
+    String([...f.calls].reverse().find((call) => call.text)?.text),
+  ).toContain('Сегодня');
   await f.tap('Календарь');
   expect(f.calls[f.calls.length - 1]?.text).toContain('📅 Календарь');
   expect(f.labels().some((label) => label.includes('Неделя'))).toBe(true);
@@ -676,6 +711,300 @@ test('personal owner has one entry per main section and a separate calendar', as
   ).toBe(false);
   await f.tap('Мой режим');
   expect(f.calls[f.calls.length - 1]?.text).toContain('Подъём и план:');
+});
+
+test('owner start and menu show six task rows with direct completion and edit without keyboard subpages', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1401));
+  const f = fixture(1401, true);
+  f.data().taskData.uncompleted = Array.from({ length: 8 }, (_, i) => ({
+    id: `list-${i}`,
+    name: `Дело ${i + 1}`,
+    completed: false,
+    tags: [],
+  }));
+  f.data().taskData.uncompleted.push({
+    name: 'Будущее',
+    date: '2099-01-01',
+    completed: false,
+    tags: [],
+  });
+  for (const command of ['/start', '/menu']) {
+    await f.text(command);
+    const screen = [...f.calls]
+      .reverse()
+      .find((call) => call.text && call.reply_markup)!;
+    const rows = (
+      screen.reply_markup as {
+        inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+      }
+    ).inline_keyboard;
+    const taskRows = rows.filter((row) =>
+      row.some((button) => button.callback_data.startsWith('menu:rowedit:')),
+    );
+    expect(taskRows).toHaveLength(6);
+    expect(
+      taskRows.every(
+        (row) => row.length === 3 && row[0].text === '☐' && row[2].text === '✏️',
+      ),
+    ).toBe(true);
+    expect(
+      rows.flat().some((button) => button.callback_data.startsWith('kbd:')),
+    ).toBe(false);
+    expect(f.labels().some((label) => label.includes('Будущее'))).toBe(false);
+    expect(f.labels()).toContain(MENU.add);
+  }
+  await f.tap('▶️');
+  expect(f.labels().some((label) => label.includes('Дело 7'))).toBe(true);
+});
+
+test('owner row edit opens Russian fields directly and returns to the live Today list', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1402));
+  const f = fixture(1402, true);
+  f.data().taskData.uncompleted[1].date = '2099-01-01';
+  await f.text('/menu');
+  await f.tap('✏️');
+  expect(f.labels()).toContain('Название');
+  expect(f.labels()).toContain('Дата');
+  await f.tap('Название');
+  await f.text('Новое название');
+  expect(f.data().taskData.uncompleted[0].name).toBe('Новое название');
+  expect(f.labels().some((label) => label.includes('Новое название'))).toBe(
+    true,
+  );
+  expect(f.labels().some((label) => label.includes('Второе'))).toBe(false);
+  await f.tap('✏️');
+  await f.tap('Назад');
+  expect(f.labels()).toContain(MENU.add);
+  expect(f.labels().some((label) => label.includes('Новое название'))).toBe(
+    true,
+  );
+});
+
+test('owner row completion rejects changed snapshots and never reports a failed save as complete', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1403));
+  const f = fixture(1403, true, false);
+  await f.text('/menu');
+  const stale = f.button('☐');
+  f.data().taskData.uncompleted[0].name = 'Изменено извне';
+  await f.click(stale);
+  expect(f.data().taskData.completed).toHaveLength(0);
+  await f.text('/menu');
+  const before = f.calls.length;
+  await f.tap('☐');
+  expect(f.data().taskData.completed).toHaveLength(0);
+  expect(
+    f.calls
+      .slice(before)
+      .some((call) => String(call.text).startsWith('✅ Готово:')),
+  ).toBe(false);
+});
+
+test('owner row completion refreshes the current page and completed-today progress without touching personal state', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1404));
+  const f = fixture(1404, true);
+  f.data().taskData.uncompleted = Array.from({ length: 7 }, (_, i) => ({
+    id: `done-${i}`,
+    name: `Дело ${i + 1}`,
+    completed: false,
+    tags: [],
+  }));
+  const personalBefore = await f.personalStore!.read();
+  await f.text('/menu');
+  await f.tap('▶️');
+  await f.tap('☐');
+  expect(f.data().taskData.completed[0].name).toBe('Дело 7');
+  expect(f.labels().some((label) => label.includes('Дело 1'))).toBe(true);
+  expect(f.labels().some((label) => label.includes('Дело 7'))).toBe(false);
+  const list = [...f.calls]
+    .reverse()
+    .find((call) => String(call.text).includes('Сегодня выполнено:'));
+  expect(String(list?.text)).toContain('Сегодня выполнено: 1');
+  expect(await f.personalStore!.read()).toEqual(personalBefore);
+});
+
+test('owner quick add previews parsed tasks before one save and then returns to the list', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1405));
+  spies.push(
+    spyOn(aiClient, 'generateBrainTasks').mockResolvedValue([
+      {
+        name: 'Новое дело',
+        completed: false,
+        tags: ['study'],
+        date: localDate(new Date(), 'Europe/Berlin'),
+        time: '18:00',
+        important: true,
+        urgent: false,
+      },
+    ]),
+  );
+  const f = fixture(1405, true);
+  await f.text('/menu');
+  await f.tap('Добавить');
+  await f.text('Новое дело сегодня в 18');
+  const preview = [...f.calls].reverse().find((call) => call.text);
+  expect(String(preview?.text)).toContain('Проверь дела');
+  expect(String(preview?.text)).toContain('18:00');
+  expect(String(preview?.text)).toContain('#study');
+  expect(f.data().taskData.uncompleted).toHaveLength(2);
+  await f.tap('Сохранить');
+  expect(f.data().taskData.uncompleted).toHaveLength(3);
+  expect(f.data().taskData.uncompleted[0].time).toBe('18:00');
+  expect(f.labels().some((label) => label.includes('Новое дело'))).toBe(true);
+  expect(f.labels()).toContain(MENU.add);
+});
+
+test('date and time edit prompts are valid MarkdownV2 and recurrence editing stays available', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1407));
+  const f = fixture(1407, true);
+  Object.assign(f.data().taskData.uncompleted[0], {
+    date: '2026-10-30',
+    time: '10:00',
+  });
+  await f.text('/menu');
+  await f.tap('✏️');
+  for (const field of ['Дата', 'Время', 'Длительность']) {
+    await f.tap(field);
+    const prompt = [...f.calls]
+      .reverse()
+      .find((call) => call.text && call.parse_mode === 'MarkdownV2')!;
+    expect(String(prompt.text)).toContain('Введи новое значение');
+    expect(/(?<!\\)[.-]/.test(String(prompt.text))).toBe(false);
+    await f.tap('Назад');
+  }
+  await f.tap('▶️');
+  expect(f.labels()).toContain('Повтор');
+});
+
+test('a delayed row edit cannot replace a newer menu opened while storage is loading', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1408));
+  const f = fixture(1408, true);
+  await f.text('/menu');
+  const pending = f.pauseStorageQuery();
+  const editing = f.click(f.button('✏️'));
+  await pending.entered;
+  await f.text('/menu');
+  pending.release();
+  await editing;
+  expect(f.labels()).toContain(MENU.add);
+  expect(f.labels()).not.toContain('Название');
+});
+
+test('owner menu keeps retry and settings available when loading tasks fails', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1406));
+  const f = fixture(1406, true);
+  f.failNextQuery();
+  await f.text('/menu');
+  expect(
+    f.calls.some((call) =>
+      String(call.text).includes('Не удалось загрузить дела'),
+    ),
+  ).toBe(true);
+  expect(f.labels()).toContain(MENU.settings);
+  await f.tap('Повторить');
+  expect(f.labels().some((label) => label.includes('Первое'))).toBe(true);
+});
+
+test('late compact save leaves the newer Home and Add input active', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1409));
+  const generation = spyOn(aiClient, 'generateBrainTasks')
+    .mockResolvedValueOnce([
+      { name: 'Первое добавление', completed: false, tags: [] },
+    ])
+    .mockResolvedValueOnce([
+      { name: 'Следующее добавление', completed: false, tags: [] },
+    ]);
+  spies.push(generation);
+  const f = fixture(1409, true);
+  await f.text('/menu');
+  await f.tap('Добавить');
+  await f.text('Первое добавление');
+  const pending = f.pauseStorageSave();
+  const saving = f.tap('Сохранить');
+  await pending.entered;
+  await f.text('/menu');
+  await f.tap('Добавить');
+  pending.release();
+  await saving;
+  await f.text('Следующее добавление');
+  expect(generation).toHaveBeenCalledTimes(2);
+  expect(
+    f
+      .data()
+      .taskData.uncompleted.some((task) => task.name === 'Первое добавление'),
+  ).toBe(true);
+  expect(
+    f
+      .data()
+      .taskData.uncompleted.some(
+        (task) => task.name === 'Следующее добавление',
+      ),
+  ).toBe(false);
+  expect(
+    String([...f.calls].reverse().find((call) => call.text)?.text),
+  ).toContain('Следующее добавление');
+  expect(f.labels()).toContain('✅ Сохранить');
+});
+
+test('explicit owner menu sends a fresh screen after unrelated chat messages', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1410));
+  const f = fixture(1410, true);
+  await f.text('/start');
+  await f.bot.api.sendMessage(1410, 'Отдельное тестовое сообщение');
+  const offset = f.calls.length;
+  await f.text('/menu');
+  const menuCalls = f.calls
+    .slice(offset)
+    .filter((call) => String(call.text).includes('Сегодня выполнено:'));
+  expect(menuCalls).toHaveLength(1);
+  expect(menuCalls[0].method).toBe('sendMessage');
+});
+
+test('completed-today count uses Berlin midnight and ignores legacy or invalid completion timestamps', async () => {
+  spies.push(spyOn(personalStorage, 'personalEnabled').mockReturnValue(true));
+  spies.push(spyOn(profiles, 'profileOwner').mockReturnValue(1411));
+  setSystemTime(new Date('2026-10-29T23:30:00Z'));
+  try {
+    const f = fixture(1411, true);
+    f.data().taskData.completed = [
+      {
+        name: 'Сегодня локально',
+        completed: true,
+        tags: [],
+        completedAt: '2026-10-29T23:05:00Z',
+      },
+      {
+        name: 'Вчера локально',
+        completed: true,
+        tags: [],
+        completedAt: '2026-10-29T22:59:00Z',
+      },
+      { name: 'Без истории', completed: true, tags: [] },
+      {
+        name: 'Повреждённая дата',
+        completed: true,
+        tags: [],
+        completedAt: 'invalid',
+      },
+    ];
+    await f.text('/menu');
+    const screen = [...f.calls]
+      .reverse()
+      .find((call) => String(call.text).includes('Сегодня выполнено:'));
+    expect(String(screen?.text)).toContain('2026-10-30');
+    expect(String(screen?.text)).toContain('Сегодня выполнено: 1');
+  } finally {
+    setSystemTime();
+  }
 });
 
 test('task list filters remain reachable when Today is empty', async () => {
@@ -1143,7 +1472,7 @@ test('renaming a task saves the title without calling AI or changing other field
   await f.text(MENU.all);
   await f.tap('1. Старое название');
   await f.tap('Изменить');
-  await f.tap('Name');
+  await f.tap('Название');
   await f.text('Новое название');
   expect(f.data().taskData.uncompleted[0]).toMatchObject({
     name: 'Новое название',
@@ -1162,7 +1491,7 @@ test('editing a task returns to an updated Today list and keeps its task keyboar
   await f.text(MENU.today);
   await f.tap('1. Первое');
   await f.tap('Изменить');
-  await f.tap('Tags');
+  await f.tap('Теги');
   await f.text('#work');
   const list = [...f.calls]
     .reverse()
@@ -1207,7 +1536,7 @@ test('editing a date out of Today shows an empty list without stale task buttons
   await f.text(MENU.today);
   await f.tap('1. Первое');
   await f.tap('Изменить');
-  await f.tap('Date');
+  await f.tap('Дата');
   await f.text('2099-01-02');
   const list = [...f.calls]
     .reverse()

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { formatInTimeZone } from 'date-fns-tz';
 import { type Composer, InlineKeyboard } from 'grammy';
+import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
 import type { BotContext } from '../middlewares/session.js';
 import { enterEditScene } from '../scenes/editTaskScene.js';
@@ -18,6 +19,8 @@ import {
   morningKeyboard,
   morningText,
 } from '../services/morningChecklist.js';
+import { localDate } from '../services/personal.js';
+import { nearestCalendarClass } from '../services/personalDashboard.js';
 import { personalEnabled } from '../services/personalStore.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { parseReminderTimes } from '../services/reminders.js';
@@ -43,6 +46,7 @@ import {
   settingsKeyboard,
   timeKeyboard,
 } from '../views/menuView.js';
+import { taskListScreen } from '../views/taskListView.js';
 import { cancelBrainDrafts, processBrainInput } from './brain.js';
 import { showNow } from './now.js';
 import { cancelRemovalDrafts, previewRemoval } from './removeSelected.js';
@@ -66,6 +70,8 @@ interface MenuState {
   media?: string[];
   tasks?: Task[];
   today?: boolean;
+  page?: number;
+  editingFromList?: boolean;
   selected?: Task;
   times?: string[];
   timeIndex?: number;
@@ -103,6 +109,7 @@ export const menuCommand = async (ctx: BotContext) => {
   newState(ctx);
   ctx.session.awaitingAdd = undefined;
   ctx.session.editScene = undefined;
+  if (hasPersonalMenu(ctx)) return showTasks(ctx, true, 0, true);
   await panelReply(
     ctx,
     HOME_TEXT,
@@ -115,32 +122,81 @@ export const menuCommand = async (ctx: BotContext) => {
 };
 
 export const returnToTaskList = async (ctx: BotContext) => {
-  const today = states.get(ctx.from!.id)?.today ?? false;
-  return showTasks(ctx, today);
+  const state = states.get(ctx.from!.id);
+  return showTasks(ctx, state?.today ?? false, state?.page ?? 0);
 };
 
-export const showTasks = async (ctx: BotContext, today = false, page = 0) => {
-  const { taskData, metadata } = await queryTasks();
-  const date = formatInTimeZone(
-    new Date(),
-    metadata.timezone || 'UTC',
-    'yyyy-MM-dd',
-  );
+export const showTasks = async (
+  ctx: BotContext,
+  today = false,
+  page = 0,
+  fresh = false,
+) => {
+  const state = newState(ctx);
+  state.today = today;
+  let data: Awaited<ReturnType<typeof queryTasks>>;
+  try {
+    data = await queryTasks();
+  } catch (error) {
+    if (states.get(ctx.from!.id) !== state) return;
+    if (!hasPersonalMenu(ctx)) throw error;
+    logger.errorWithContext({ op: 'MENU', message: 'Task list unavailable' });
+    return panelReply(
+      ctx,
+      'Не удалось загрузить дела. Можно повторить или открыть настройки.',
+      {
+        reply_markup: mainInlineKeyboard(true)
+          .row()
+          .text('🔄 Повторить', 'menu:home'),
+      },
+      { navigation: false },
+    );
+  }
+  if (states.get(ctx.from!.id) !== state) return;
+  const { taskData, metadata } = data;
+  const now = new Date();
+  const date = localDate(now, metadata.timezone || 'UTC');
   const tasks = numberedTasks(
     taskData.uncompleted.filter(
       (task) => !task.completed && (!today || !task.date || task.date <= date),
     ),
   );
-  const state = newState(ctx);
   state.tasks = structuredClone(tasks);
-  state.today = today;
+  state.page = Math.max(
+    0,
+    Math.min(page, Math.max(0, Math.ceil(tasks.length / 6) - 1)),
+  );
+  rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, tasks);
+  if (hasPersonalMenu(ctx)) {
+    const timezone = metadata.timezone || 'UTC';
+    const completedToday = taskData.completed.filter(
+      (task) =>
+        task.completedAt &&
+        Number.isFinite(Date.parse(task.completedAt)) &&
+        localDate(new Date(task.completedAt), timezone) === date,
+    ).length;
+    const screen = taskListScreen({
+      tasks,
+      id: state.id,
+      page: state.page,
+      today,
+      date,
+      completedToday,
+      nextClass: nearestCalendarClass(metadata, timezone, now),
+    });
+    return panelReply(
+      ctx,
+      screen.text,
+      { parse_mode: 'HTML', reply_markup: screen.keyboard },
+      { navigation: false, preserveRows: true, newMessage: fresh },
+    );
+  }
   const messages = splitMessages([
     today ? `📋 Сегодня · ${date}` : `📚 Все дела · ${tasks.length}`,
     '',
     ...matrixLines(tasks),
   ]);
   for (const message of messages.slice(0, -1)) await panelReply(ctx, message);
-  rememberTaskNumbers(ctx.from!.id, ctx.chat!.id, tasks);
   const lastPage = Math.max(0, Math.ceil(tasks.length / 6) - 1);
   await showPicker(
     ctx,
@@ -671,7 +727,12 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       if (!state || state.expires < Date.now() || !state.input) return next();
       if (state.input === 'brain') {
         state.input = undefined;
-        return await processBrainInput(ctx, text);
+        return await processBrainInput(
+          ctx,
+          text,
+          false,
+          () => states.get(ctx.from!.id) === state,
+        );
       }
       if (state.input?.startsWith('wake-'))
         return await saveWakeInput(ctx, state, text);
@@ -706,7 +767,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       await ctx.answerCallbackQuery({ text: 'Открой личный чат с ботом.' });
       return;
     }
-    const [action, id, value] = ctx.match[1].split(':');
+    let [action, id, value] = ctx.match[1].split(':');
     const state = states.get(ctx.from.id);
     if (
       id &&
@@ -978,6 +1039,14 @@ export const registerMenu = (composer: Composer<BotContext>) => {
         if (task) await card(ctx, state, task);
         return;
       }
+      if (action === 'rowdone' || action === 'rowedit') {
+        if (!/^(0|[1-9]\d*)$/.test(value ?? '')) return;
+        const selected = state.tasks?.[Number(value)];
+        if (!selected) return;
+        state.selected = selected;
+        state.editingFromList = action === 'rowedit';
+        action = action === 'rowedit' ? 'edit' : 'done';
+      }
       if (action === 'importance') {
         const keyboard = new InlineKeyboard();
         QUADRANTS.forEach((title, index) => {
@@ -994,6 +1063,7 @@ export const registerMenu = (composer: Composer<BotContext>) => {
       const task = state.selected;
       if (!task) return;
       const { taskData, metadata } = await queryTasks();
+      if (states.get(ctx.from.id) !== state) return;
       const index = taskData.uncompleted.findIndex(
         (live) => taskFingerprint(live) === taskFingerprint(task),
       );
@@ -1003,13 +1073,20 @@ export const registerMenu = (composer: Composer<BotContext>) => {
           'Дело изменилось. Открой «📚 Все дела» заново.',
         );
       if (action === 'delete') return await previewRemoval(ctx, [task]);
-      if (action === 'edit') return await enterEditScene(ctx, index, task);
+      if (action === 'edit')
+        return await enterEditScene(
+          ctx,
+          index,
+          task,
+          () => states.get(ctx.from.id) === state,
+        );
       if (action === 'done') {
         const live = taskData.uncompleted.splice(index, 1)[0];
         markTaskCompleted(live, metadata.timezone);
         taskData.completed.unshift(live);
         if (!(await saveTasks(taskData, metadata)))
           throw new Error('Storage did not confirm save');
+        if (states.get(ctx.from.id) !== state) return;
         await returnToTaskList(ctx);
         return await panelNotice(ctx, `✅ Готово: ${task.name}`, {
           reply_markup: new InlineKeyboard().text('⬅️ Назад', 'menu:tasks'),
@@ -1174,6 +1251,7 @@ export const backToTask = async (ctx: BotContext) => {
   const state = ctx.from && states.get(ctx.from.id);
   if (!state || state.expires < Date.now()) return await menuCommand(ctx);
   state.input = undefined;
+  if (state.editingFromList) return await returnToTaskList(ctx);
   if (state.selected) return await card(ctx, state, state.selected);
   if (state.tasks) return await showTasks(ctx, state.today);
   return await menuCommand(ctx);

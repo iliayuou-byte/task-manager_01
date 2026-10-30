@@ -12,9 +12,11 @@ import {
 } from '../services/chatPanel.js';
 import { getQuadrant, QUADRANTS, setQuadrant } from '../services/eisenhower.js';
 import { pausePendingInputs, recoverInput } from '../services/pendingInputs.js';
+import { personalEnabled } from '../services/personalStore.js';
 import { queryTasks } from '../services/queryTasks.js';
 import { saveTasks } from '../services/saveTasks.js';
 import { displayTaskTags } from '../services/taskTags.js';
+import { profileOwner } from '../services/userScope.js';
 import { extractArg, logAndReplyError } from '../utils/index.js';
 import { SECTION_TITLES } from '../views/botStyle.js';
 import { splitMessages } from '../views/eisenhowerView.js';
@@ -27,17 +29,17 @@ interface Draft {
   saving: boolean;
   reviewed: Set<number>;
   removed: Set<number>;
+  compact: boolean;
+  cancelled?: boolean;
 }
 const drafts = new Map<string, Draft>();
 export const cancelBrainDrafts = (ctx: BotContext) => {
   pausePendingInputs(ctx);
   for (const [id, draft] of drafts)
-    if (
-      draft.owner === ctx.from?.id &&
-      draft.chat === ctx.chat?.id &&
-      !draft.saving
-    )
-      drafts.delete(id);
+    if (draft.owner === ctx.from?.id && draft.chat === ctx.chat?.id) {
+      if (draft.saving) draft.cancelled = true;
+      else drafts.delete(id);
+    }
 };
 
 export const brainCommand = async (ctx: BotContext) => {
@@ -96,6 +98,7 @@ export const processBrainInput = async (
       saving: false,
       reviewed: new Set(),
       removed: new Set(),
+      compact: personalEnabled() && ctx.from!.id === profileOwner(),
     };
     drafts.set(id, draft);
     await showDraft(ctx, id, draft);
@@ -115,39 +118,61 @@ const categoryButtons = [
 
 const showDraft = async (ctx: BotContext, id: string, draft: Draft) => {
   beginPanel(ctx);
-  const lines = SECTION_TITLES.flatMap((title, quadrant) => [
-    title,
-    ...draft.tasks.flatMap((task, index) =>
-      !draft.removed.has(index) && getQuadrant(task) === quadrant + 1
-        ? [
-            `${index + 1}. ${draft.reviewed.has(index) ? '✅' : '❓'} ${task.name.replace(/\s+/g, ' ').slice(0, 250)}${displayTaskTags(task.tags)}${task.date ? ` (${task.date}${task.time ? ` ${task.time}` : ''})` : ''}`,
-          ]
-        : [],
-    ),
-    '',
-  ]);
+  const lines = draft.compact
+    ? draft.tasks.flatMap((task, index) =>
+        draft.removed.has(index)
+          ? []
+          : [
+              `${index + 1}. ${task.name.replace(/\s+/g, ' ').slice(0, 250)}${displayTaskTags(task.tags)}${task.date ? ` · ${task.date}` : ''}${task.time ? ` ${task.time}` : ''}`,
+            ],
+      )
+    : SECTION_TITLES.flatMap((title, quadrant) => [
+        title,
+        ...draft.tasks.flatMap((task, index) =>
+          !draft.removed.has(index) && getQuadrant(task) === quadrant + 1
+            ? [
+                `${index + 1}. ${draft.reviewed.has(index) ? '✅' : '❓'} ${task.name.replace(/\s+/g, ' ').slice(0, 250)}${displayTaskTags(task.tags)}${task.date ? ` (${task.date}${task.time ? ` ${task.time}` : ''})` : ''}`,
+              ]
+            : [],
+        ),
+        '',
+      ]);
   const messages = splitMessages([
-    `🧠 Черновик · ${draft.tasks.length - draft.removed.size} дел`,
-    'Проверь предложенные категории перед сохранением.',
-    '❓ — предложение ИИ, ещё не проверено тобой. ✅ — твой выбор.',
+    `${draft.compact ? '➕ Проверь дела' : '🧠 Черновик'} · ${draft.tasks.length - draft.removed.size}`,
+    ...(draft.compact
+      ? []
+      : [
+          'Проверь предложенные категории перед сохранением.',
+          '❓ — предложение ИИ, ещё не проверено тобой. ✅ — твой выбор.',
+        ]),
     '',
     ...lines,
-    'Ошибки распознавания можно удалить, категории — изменить.\nСохраню только после нажатия «Сохранить». Черновик доступен 15 минут.',
+    draft.compact
+      ? 'Сохранить — добавить эти дела с предложенными ИИ категориями. Категории можно изменить отдельно. До подтверждения список не меняется.'
+      : 'Ошибки распознавания можно удалить, категории — изменить.\nСохраню только после нажатия «Сохранить». Черновик доступен 15 минут.',
   ]);
+  const keyboard = draft.compact
+    ? new InlineKeyboard()
+        .text('✅ Сохранить', `brain_yes:${id}`)
+        .text('⬅️ Назад', `brain_no:${id}`)
+        .row()
+        .text('Категории', `brain_pick:${id}:0`)
+        .text('🗑 Удалить дело', `brain_pickdelete:${id}:0`)
+    : new InlineKeyboard()
+        .text('🧭 Разобрать по одному', `brain_review:${id}`)
+        .row()
+        .text('🔀 Изменить категорию', `brain_pick:${id}:0`)
+        .text('🗑 Удалить дело', `brain_pickdelete:${id}:0`)
+        .row()
+        .text('✅ Сохранить', `brain_yes:${id}`)
+        .text('⬅️ Назад', `brain_no:${id}`);
   for (let index = 0; index < messages.length; index++) {
     await panelReply(
       ctx,
       messages[index],
       index === messages.length - 1
         ? {
-            reply_markup: new InlineKeyboard()
-              .text('🧭 Разобрать по одному', `brain_review:${id}`)
-              .row()
-              .text('🔀 Изменить категорию', `brain_pick:${id}:0`)
-              .text('🗑 Удалить дело', `brain_pickdelete:${id}:0`)
-              .row()
-              .text('✅ Сохранить', `brain_yes:${id}`)
-              .text('⬅️ Назад', `brain_no:${id}`),
+            reply_markup: keyboard,
           }
         : {},
     );
@@ -373,12 +398,21 @@ export const registerBrainActions = (composer: Composer<BotContext>) => {
           throw new Error('Storage did not confirm save');
       }
       drafts.delete(id);
+      if (draft.cancelled)
+        return await ctx.reply(`✅ Добавлено дел: ${additions.length}`);
+      if (draft.compact) {
+        const { showTasks } = await import('./menu.js');
+        await showTasks(ctx);
+        const { panelNotice } = await import('../services/chatPanel.js');
+        return await panelNotice(ctx, `✅ Добавлено дел: ${additions.length}`);
+      }
       await panelReply(
         ctx,
         `✅ Записал. Добавлено задач: ${additions.length}.\n\n${additions.map((task) => `• ${task.name}`).join('\n')}\n\n/now — следующий шаг\n/list — весь список`,
       );
     } catch (error) {
       draft.saving = false;
+      if (draft.cancelled) drafts.delete(id);
       await logAndReplyError(
         ctx,
         Command.BRAIN,

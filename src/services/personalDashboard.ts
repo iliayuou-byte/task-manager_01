@@ -8,22 +8,11 @@ import {
   shiftDate,
 } from './personal.js';
 
-export const buildPersonalDashboard = (
-  state: PersonalState,
-  tasks: Task[],
+export const nearestCalendarClass = (
   metadata: Metadata,
   timezone: string,
   now: Date,
 ) => {
-  const date = localDate(now, timezone);
-  const day = state.days[date] ?? createDayPlan();
-  const selected = day.priorities.flatMap((id) => {
-    const task = tasks.find((task) => task.id === id);
-    return task ? [task] : [];
-  });
-  const completed = selected.filter((task) => task.completed).length;
-  const nextTask = selected.find((task) => !task.completed);
-  const items = day.morningItems.length ? day.morningItems : state.morningItems;
   const classes = readScheduleEvents(metadata.calendar_events)
     .flatMap((event) => {
       try {
@@ -56,6 +45,25 @@ export const buildPersonalDashboard = (
       }
     })
     .sort((a, b) => a.start - b.start);
+  return classes[0];
+};
+
+export const buildPersonalDashboard = (
+  state: PersonalState,
+  tasks: Task[],
+  metadata: Metadata,
+  timezone: string,
+  now: Date,
+) => {
+  const date = localDate(now, timezone);
+  const day = state.days[date] ?? createDayPlan();
+  const selected = day.priorities.flatMap((id) => {
+    const task = tasks.find((task) => task.id === id);
+    return task ? [task] : [];
+  });
+  const completed = selected.filter((task) => task.completed).length;
+  const nextTask = selected.find((task) => !task.completed);
+  const items = day.morningItems.length ? day.morningItems : state.morningItems;
   return {
     date,
     time: formatInTimeZone(now, timezone, 'HH:mm'),
@@ -72,7 +80,7 @@ export const buildPersonalDashboard = (
     morningTotal: items.length,
     reviewDone: !!day.review,
     hasTasks: tasks.some((task) => !task.completed),
-    nextClass: classes[0],
+    nextClass: nearestCalendarClass(metadata, timezone, now),
   };
 };
 

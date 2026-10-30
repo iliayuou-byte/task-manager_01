@@ -19,8 +19,18 @@ import { FIELD_CONFIGS } from '../utils/validators.js';
 const isValidField = (field: string): field is EditableField =>
   (EDITABLE_FIELDS as readonly string[]).includes(field);
 
-const capitalize = (str: string) =>
-  str.charAt(0).toUpperCase() + str.substring(1);
+const FIELD_LABELS: Record<EditableField, string> = {
+  name: 'Название',
+  date: 'Дата',
+  time: 'Время',
+  duration: 'Длительность',
+  priority: 'Приоритет',
+  tags: 'Теги',
+  description: 'Описание',
+  link: 'Ссылка',
+  log: 'Журнал',
+  recurrenceRule: 'Повтор',
+};
 
 const isFieldEditable = (field: EditableField, task: Task): boolean => {
   if (field === 'time' || field === 'duration') {
@@ -33,15 +43,24 @@ const isFieldEditable = (field: EditableField, task: Task): boolean => {
 };
 
 const generateEditKeyboard = (task: Task) => {
-  const fields = Array.from(EDITABLE_FIELDS).filter((field) =>
-    isFieldEditable(field, task),
-  );
+  const common: EditableField[] = [
+    'name',
+    'date',
+    'time',
+    'duration',
+    'description',
+    'link',
+  ];
+  const fields = [
+    ...common,
+    ...EDITABLE_FIELDS.filter((field) => !common.includes(field)),
+  ].filter((field) => isFieldEditable(field, task));
   const keyboard = new InlineKeyboard();
 
   for (let i = 0; i < fields.length; i += 2) {
-    keyboard.text(capitalize(fields[i]), `edit_${fields[i]}`);
+    keyboard.text(FIELD_LABELS[fields[i]], `edit_${fields[i]}`);
     if (i + 1 < fields.length) {
-      keyboard.text(capitalize(fields[i + 1]), `edit_${fields[i + 1]}`);
+      keyboard.text(FIELD_LABELS[fields[i + 1]], `edit_${fields[i + 1]}`);
     }
     keyboard.row();
   }
@@ -58,8 +77,10 @@ export const enterEditScene = async (
   ctx: BotContext,
   taskIdx: number,
   expected?: Task,
+  active?: () => boolean,
 ) => {
   const { taskData } = await queryTasks();
+  if (active && !active()) return;
   if (expected)
     taskIdx = taskData.uncompleted.findIndex(
       (task) => taskFingerprint(task) === taskFingerprint(expected),
@@ -67,7 +88,7 @@ export const enterEditScene = async (
   const task = taskData.uncompleted[taskIdx];
 
   if (!task) {
-    await panelReply(ctx, '❌ Task not found.');
+    await panelReply(ctx, 'Дело изменилось или удалено. Открой список заново.');
     return;
   }
 
@@ -79,7 +100,7 @@ export const enterEditScene = async (
 
   await panelReply(
     ctx,
-    `Select a field to edit for *${escapeMarkdownV2(task.name)}*:`,
+    `✏️ *${escapeMarkdownV2(task.name)}*\nВыбери, что изменить:`,
     {
       parse_mode: 'MarkdownV2',
       reply_markup: generateEditKeyboard(task),
@@ -120,7 +141,7 @@ editSceneComposer.callbackQuery(/^edit_(.+)$/, async (ctx) => {
     state.field = action;
     await panelReply(
       ctx,
-      `✏️ Please enter the new value for *${escapeMarkdownV2(action)}*:`,
+      `✏️ Введи новое значение — *${FIELD_LABELS[action]}*:${escapeMarkdownV2(action === 'date' ? '\nДата в формате ГГГГ-ММ-ДД.' : action === 'time' || action === 'duration' ? '\nФормат ЧЧ:ММ.' : '')}`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: new InlineKeyboard()
@@ -139,7 +160,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
   }
 
   if (!state.field) {
-    return panelReply(ctx, '⚠️ Please select a field first.');
+    return panelReply(ctx, 'Выбери поле кнопкой выше.');
   }
 
   const fieldToUpdate = state.field;
@@ -150,10 +171,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     const { metadata, taskData } = await queryTasks();
 
     if (!metadata.timezone) {
-      await panelReply(
-        ctx,
-        '❌ Timezone not set. Please set your timezone first using /settimezone command.',
-      );
+      await panelReply(ctx, 'Сначала укажи часовой пояс в настройках.');
       ctx.session.editScene = undefined;
       return;
     }
@@ -165,7 +183,10 @@ editSceneComposer.on('message:text', async (ctx, next) => {
       : state.taskIdx;
     const oldTask = taskData.uncompleted[taskIdx];
     if (!oldTask) {
-      await panelReply(ctx, '❌ Task not found.');
+      await panelReply(
+        ctx,
+        'Дело изменилось или удалено. Открой список заново.',
+      );
       ctx.session.editScene = undefined;
       return;
     }
@@ -180,9 +201,7 @@ editSceneComposer.on('message:text', async (ctx, next) => {
     if (!updatedTask) {
       await panelReply(
         ctx,
-        `⚠️ The new value is the same as the current one for *${escapeMarkdownV2(
-          fieldToUpdate,
-        )}*\\. No changes made\\.`,
+        `Значение поля *${FIELD_LABELS[fieldToUpdate]}* не изменилось\\.`,
         { parse_mode: 'MarkdownV2' },
       );
       ctx.session.editScene = undefined;
@@ -231,12 +250,17 @@ editSceneComposer.on('message:text', async (ctx, next) => {
         );
       }
     }
-  } catch (error) {
+  } catch {
     await panelReply(
       ctx,
-      `❌ Failed to update: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      '❌ Не удалось изменить дело. Проверь значение и повтори ввод или вернись к списку.',
     );
-    logger.errorWithContext({ userId, op: Command.EDIT, error });
+    logger.errorWithContext({
+      userId,
+      op: Command.EDIT,
+      message: 'Task edit failed',
+    });
+    return;
   }
 
   ctx.session.editScene = undefined;
