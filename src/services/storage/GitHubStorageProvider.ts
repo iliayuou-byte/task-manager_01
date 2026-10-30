@@ -1,4 +1,4 @@
-import { fetchFileContent, saveFileContent } from '../../clients/github.js';
+import { fetchFileSnapshot, saveFileContent } from '../../clients/github.js';
 import { getInitialContent } from '../../core/config.js';
 import logger from '../../core/logger.js';
 import type { Metadata, TaskData } from '../../core/types.js';
@@ -12,19 +12,27 @@ import type { IStorageProvider } from './types.js';
 export class GitHubStorageProvider implements IStorageProvider {
   async queryTasks(): Promise<{ metadata: Metadata; taskData: TaskData }> {
     let content: string;
+    let revision: string;
     try {
-      content = await fetchFileContent();
+      const snapshot = await fetchFileSnapshot();
+      content = snapshot.content;
+      revision = snapshot.sha;
     } catch (error) {
       if (
         error instanceof Error &&
         error.message.includes('Tasks file not found')
       ) {
-        content = (await this.initTasks()) as string;
+        await this.initTasks();
+        const snapshot = await fetchFileSnapshot();
+        content = snapshot.content;
+        revision = snapshot.sha;
       } else {
         throw error;
       }
     }
-    return deserializeTaskMarkdown(content);
+    const parsed = deserializeTaskMarkdown(content);
+    parsed.metadata.storage_revision = revision;
+    return parsed;
   }
 
   async saveTasks(tasks: TaskData, metadata: Metadata): Promise<boolean> {
@@ -48,6 +56,9 @@ export class GitHubStorageProvider implements IStorageProvider {
     }
 
     const activeTags = new Set<string>([]);
+    for (const task of [...tasks.uncompleted, ...tasks.completed]) {
+      task.id ||= crypto.randomUUID();
+    }
     for (const task of tasks.uncompleted) {
       if (task.tags) {
         for (const tag of task.tags) {
@@ -61,7 +72,7 @@ export class GitHubStorageProvider implements IStorageProvider {
     metadata.last_synced = now.toISOString();
     const content = serializeTaskMarkdown(tasks, metadata);
     const commitMessage = `[bot] update - ${now.toISOString()}`;
-    return saveFileContent(content, commitMessage);
+    return saveFileContent(content, commitMessage, 3, metadata);
   }
 
   async initTasks(): Promise<string> {

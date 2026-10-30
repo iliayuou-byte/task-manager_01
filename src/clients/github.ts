@@ -1,6 +1,7 @@
 import type { Octokit } from '@octokit/rest';
-
+import { TaskRevisionConflictError } from '../core/error.js';
 import logger from '../core/logger.js';
+import { profileFilePath } from '../services/userScope.js';
 
 const getErrorStatus = (error: unknown): number | undefined =>
   error instanceof Error && 'status' in error
@@ -56,10 +57,14 @@ export const getGitHubFileInfo = (): GitHubFileInfo => {
     throw new Error('FILE_PATH is not configured');
   }
 
-  return parseGitHubPath(path);
+  const info = parseGitHubPath(path);
+  return { ...info, filePath: profileFilePath(info.filePath) };
 };
 
-export const fetchFileContent = async (): Promise<string> => {
+export const fetchFileSnapshot = async (): Promise<{
+  content: string;
+  sha: string;
+}> => {
   const { owner, repo, branch, filePath } = getGitHubFileInfo();
   try {
     const octokit = await getOctokit();
@@ -78,7 +83,7 @@ export const fetchFileContent = async (): Promise<string> => {
     const base64 = res.data.content.replace(/\n/g, '');
     const text = Buffer.from(base64, 'base64').toString('utf8');
 
-    return text;
+    return { content: text, sha: res.data.sha };
   } catch (error) {
     if (getErrorStatus(error) === 404) {
       const notFoundErrorMsg =
@@ -105,50 +110,53 @@ export const saveFileContent = async (
   content: string,
   commitMessage: string,
   retries = 3,
+  snapshot?: { storage_revision?: string },
 ): Promise<boolean> => {
   let attempt = 0;
+  const expectedSha = snapshot?.storage_revision;
   const { owner, repo, branch, filePath } = getGitHubFileInfo();
   while (attempt < retries) {
     try {
       const octokit = await getOctokit();
 
-      let sha: string | undefined;
+      let sha: string | undefined = expectedSha;
 
       // Try to get current file SHA (required for update)
-      try {
-        const currentFile = await octokit.repos.getContent({
-          owner,
-          repo,
-          path: filePath,
-          ref: branch,
-        });
-
-        if (
-          Array.isArray(currentFile.data) ||
-          currentFile.data.type !== 'file'
-        ) {
-          throw new Error('Path is not a file');
-        }
-
-        sha = currentFile.data.sha;
-      } catch (error) {
-        const status = getErrorStatus(error);
-
-        // If file doesn't exist (404) or repo is empty (404), we'll create it without SHA
-        if (status === 404) {
-          logger.infoWithContext({
-            userId: owner,
-            op: 'SAVE_FILE',
-            message: 'File does not exist, creating new file',
+      if (!expectedSha)
+        try {
+          const currentFile = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: filePath,
+            ref: branch,
           });
-          sha = undefined;
-        } else {
-          throw error;
+
+          if (
+            Array.isArray(currentFile.data) ||
+            currentFile.data.type !== 'file'
+          ) {
+            throw new Error('Path is not a file');
+          }
+
+          sha = currentFile.data.sha;
+        } catch (error) {
+          const status = getErrorStatus(error);
+
+          // If file doesn't exist (404) or repo is empty (404), we'll create it without SHA
+          if (status === 404) {
+            logger.infoWithContext({
+              userId: owner,
+              op: 'SAVE_FILE',
+              message: 'File does not exist, creating new file',
+            });
+            sha = undefined;
+          } else {
+            throw error;
+          }
         }
-      }
 
       // Create or update file on GitHub
-      await octokit.repos.createOrUpdateFileContents({
+      const written = await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
         path: filePath,
@@ -158,11 +166,21 @@ export const saveFileContent = async (
         branch,
       });
 
+      if (snapshot) {
+        const revision = written.data.content?.sha;
+        if (!revision)
+          throw new Error('GitHub did not return the saved file revision');
+        snapshot.storage_revision = revision;
+      }
       logger.infoWithContext({ message: `File saved to GitHub: ${filePath}` });
       return true;
     } catch (error) {
       attempt++;
       const isConflict = getErrorStatus(error) === 409;
+
+      if (isConflict && expectedSha) {
+        throw new TaskRevisionConflictError();
+      }
 
       if (isConflict && attempt < retries) {
         logger.warnWithContext({

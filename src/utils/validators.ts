@@ -91,6 +91,28 @@ const validators = {
 
 // Field configurations for all task fields
 export const FIELD_CONFIGS: Record<Field, FieldConfig> = {
+  id: {
+    validator: (value) =>
+      typeof value === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(value),
+    errorMessage: 'Invalid task ID',
+  },
+  completedAt: {
+    validator: (value) =>
+      typeof value === 'string' && !Number.isNaN(Date.parse(value)),
+    errorMessage: 'Invalid completion timestamp',
+  },
+  priorityLocked: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'PriorityLocked must be boolean',
+  },
+  important: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'Important must be boolean',
+  },
+  urgent: {
+    validator: (value) => typeof value === 'boolean',
+    errorMessage: 'Urgent must be boolean',
+  },
   completed: {
     validator: validators.completed,
     errorMessage: 'Completed must be a boolean value',

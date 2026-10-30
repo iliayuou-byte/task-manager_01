@@ -4,6 +4,7 @@ import {
   clearPendingCalendarOps,
   getPendingCalendarOps,
 } from '../middlewares/session.js';
+import { panelReply } from '../services/chatPanel.js';
 
 const getCalendarService = async () => {
   const { googleCalendarService } = await import(
@@ -14,8 +15,12 @@ const getCalendarService = async () => {
 
 import logger from '../core/logger.js';
 import type { Task } from '../core/types.js';
+import {
+  type CalendarLink,
+  CalendarLinkSaveError,
+  persistCalendarLinks,
+} from '../services/calendarLinks.js';
 import { queryTasks } from '../services/queryTasks.js';
-import { saveTasks } from '../services/saveTasks.js';
 import { findTaskIdxByName } from '../utils/index.js';
 
 export const registerCalendarAction = (composer: Composer<BotContext>) => {
@@ -28,23 +33,12 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
     await ctx.answerCallbackQuery();
 
     if (!ops || ops.length === 0) {
-      await ctx.editMessageReplyMarkup(undefined);
+      await panelReply(ctx, 'Операция календаря больше недоступна.');
       return;
     }
-
-    try {
-      await ctx.editMessageReplyMarkup(undefined);
-    } catch (e) {
-      if (e instanceof Error) {
-        logger.debugWithContext({
-          message: `Failed to remove keyboard: ${e.message}`,
-        });
-      }
-    }
-
     if (!isYes) {
-      await ctx.deleteMessage();
       clearPendingCalendarOps(userId);
+      await panelReply(ctx, 'Изменение календаря отменено.');
       return;
     }
 
@@ -53,7 +47,8 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
       const { metadata, taskData } = await queryTasks();
 
       if (!metadata.timezone) {
-        await ctx.reply(
+        await panelReply(
+          ctx,
           '❌ Timezone not set. Please use /settimezone then click Yes again.',
         );
         return;
@@ -62,6 +57,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
       // Process operations
       let successCount = 0;
       let failCount = 0;
+      const links: CalendarLink[] = [];
 
       for (const op of ops) {
         try {
@@ -87,6 +83,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
             );
             if (eventId) {
               task.calendarEventId = eventId;
+              links.push({ taskId: task.id, taskName: task.name, eventId });
               successCount++;
             } else {
               failCount++;
@@ -124,6 +121,7 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
                 metadata.timezone,
               );
               if (eventId) {
+                links.push({ taskId: task.id, taskName: task.name, eventId });
                 if (eventId !== task.calendarEventId) {
                   task.calendarEventId = eventId;
                 }
@@ -143,18 +141,24 @@ export const registerCalendarAction = (composer: Composer<BotContext>) => {
         }
       }
 
-      // Save once after all ops
-      if (successCount > 0) {
-        await saveTasks(taskData, metadata);
-      }
+      await persistCalendarLinks(links);
 
-      await ctx.reply(
+      await panelReply(
+        ctx,
         `✅ Processed ${successCount} calendar operations.` +
           (failCount > 0 ? ` (Failed: ${failCount})` : ''),
       );
     } catch (error) {
-      logger.errorWithContext({ userId, op: 'CALENDAR_ACTION', error });
-      await ctx.reply('❌ An error occurred.');
+      logger.errorWithContext({
+        userId,
+        op: 'CALENDAR_ACTION',
+        message: 'Calendar action failed',
+      });
+      await ctx.reply(
+        error instanceof CalendarLinkSaveError
+          ? error.message
+          : '❌ An error occurred.',
+      );
     }
 
     clearPendingCalendarOps(userId);

@@ -9,6 +9,7 @@ export type { CalendarOpSession } from '../core/types.js';
 export interface EditSceneState {
   active: boolean;
   taskIdx: number;
+  fingerprint?: string;
   field?: EditableField;
 }
 
